@@ -1,7 +1,8 @@
-import type { ChatMessage, ClaimRecord, PublicJob } from "./types";
+import type { ChatMessage, ClaimRecord, EvidenceSubmission, PublicJob } from "./types";
 
 const CLAIMS_KEY = "prime-port.claims.v1";
 const chatKey = (jobId: string) => `prime-port.chat.${jobId}.v1`;
+const evidenceKey = (jobId: string) => `prime-port.evidence.${jobId}.v1`;
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -34,6 +35,16 @@ export function readMessages(jobId: string) {
 export function appendMessage(message: ChatMessage) {
   const next = [...readMessages(message.jobId), message];
   writeJson(chatKey(message.jobId), next);
+  return next;
+}
+
+export function readEvidence(jobId: string) {
+  return readJson<EvidenceSubmission[]>(evidenceKey(jobId), []);
+}
+
+export function saveEvidenceSubmission(submission: EvidenceSubmission) {
+  const next = [...readEvidence(submission.jobId), submission];
+  writeJson(evidenceKey(submission.jobId), next);
   return next;
 }
 

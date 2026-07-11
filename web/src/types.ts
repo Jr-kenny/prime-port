@@ -6,6 +6,37 @@ export type JobStatus =
   | "approved"
   | "settled";
 
+export type HireCommitment = {
+  version: number;
+  jobId: string;
+  port: {
+    inboxId: string;
+  };
+  agent: {
+    agentId: string;
+    wallet: string;
+  };
+  freelancer: {
+    inboxId: string;
+    wallet: string;
+    payoutAddress: string;
+  };
+  terms: {
+    criteria: string;
+    price: string;
+    currency: string;
+    deadline: number;
+  };
+  feeBps?: number;
+  transcriptHash: string;
+  hiredAt: number;
+};
+
+export type PendingHire = {
+  hash: string;
+  commitment: HireCommitment;
+};
+
 export type PublicJob = {
   jobId: string;
   status: JobStatus;
@@ -16,6 +47,10 @@ export type PublicJob = {
   deadline: number;
   createdAt?: number;
   feeBps?: number;
+  agent?: {
+    agentId: string;
+    wallet: string;
+  };
   port?: {
     inboxId: string;
   };
@@ -26,10 +61,7 @@ export type PublicJob = {
     name: string;
     claimedAt: number;
   }>;
-  pendingHire?: {
-    hash: string;
-    commitment: unknown;
-  };
+  pendingHire?: PendingHire;
 };
 
 export type ClaimRequest = {
@@ -45,9 +77,15 @@ export type ClaimResponse = {
   next: string;
 };
 
+export type CountersignResponse = {
+  hired: boolean;
+  commitmentHash: string;
+};
+
 export type DemoIdentity = {
   inboxId: string;
   wallet: string;
+  walletPrivateKey: string;
   payoutAddress: string;
   name: string;
   email: string;
@@ -65,5 +103,22 @@ export type ChatMessage = {
   jobId: string;
   sender: "freelancer" | "port";
   content: string;
+  createdAt: number;
+};
+
+export type EvidenceAttachment = {
+  name: string;
+  size: number;
+  mimeType: string;
+  kind: "file" | "media";
+};
+
+export type EvidenceSubmission = {
+  id: string;
+  jobId: string;
+  note: string;
+  links: string[];
+  txHashes: string[];
+  attachments: EvidenceAttachment[];
   createdAt: number;
 };

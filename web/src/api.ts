@@ -1,4 +1,4 @@
-import type { ClaimRequest, ClaimResponse, PublicJob } from "./types";
+import type { ClaimRequest, ClaimResponse, CountersignResponse, PublicJob } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
@@ -34,5 +34,12 @@ export function claimJob(jobId: string, claim: ClaimRequest) {
   return request<ClaimResponse>(`/jobs/${encodeURIComponent(jobId)}/claims`, {
     method: "POST",
     body: JSON.stringify(claim),
+  });
+}
+
+export function countersignHire(jobId: string, signature: string) {
+  return request<CountersignResponse>(`/jobs/${encodeURIComponent(jobId)}/countersign`, {
+    method: "POST",
+    body: JSON.stringify({ signature }),
   });
 }
