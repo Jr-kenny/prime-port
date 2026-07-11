@@ -24,7 +24,7 @@ Deadline: **July 17, 2026**. Team of 4.
 |---|---|---|
 | **Backend / protocol** | Kenny | ASP registration + onchainos integration, port lifecycle (mint / grant / revoke / scrap), MCP tools (`publish`, `get_offers`, `negotiate`, `hire`, `approve`) |
 | **Payout + contracts** | open, grab it | Forwarding contract on XLayer (register-at-hire, forward-by-anyone, fee split), release watcher |
-| **Frontend** | open, grab it | Job pages, claim flow with embedded wallet onboarding, freelancer chat UI, evidence submission |
+| **Frontend** | PASdeco | Job pages, claim flow with embedded wallet onboarding, freelancer chat UI, evidence submission |
 | **Distribution + demo** | open, grab it | X + Telegram posting pipeline, demo storyboard, submission page, pitch |
 
 Lane rules:
@@ -42,4 +42,38 @@ backend/     ASP integration, port manager, MCP server
 contracts/   forwarding contract (XLayer)
 web/         job pages + freelancer app
 distribution/ social posting pipeline
+```
+
+## Web app
+
+The freelancer-facing web app lives in `web/`. This is the issue #9 interface implementation:
+a premium landing page, job board, per-job detail pages, claim flow, WhatsApp-style chat list,
+and full-screen chat route.
+
+Routes:
+
+- `/` — public landing page.
+- `/home` — freelancer dashboard.
+- `/jobs` — open job board.
+- `/jobs/:jobId` — canonical direct job link for social distribution.
+- `/chats` — claimed port list.
+- `/chats/:jobId` — full-screen private port chat.
+
+The app consumes the backend REST surface from `backend/mcp-server` through the Vite `/api`
+proxy. Embedded wallet and browser XMTP integration remain adapter points because the provider
+choice is still open in the frontend lane.
+
+Run and verify:
+
+```powershell
+cd backend\mcp-server
+npm install
+npm start
+```
+
+```powershell
+cd web
+npm install
+npm run dev
+npm run build
 ```
