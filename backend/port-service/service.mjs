@@ -170,6 +170,30 @@ async function scrap(jobId) {
   return rec;
 }
 
+// Live transcript entries for one peer's channel, same row shape the hire
+// commitment hashes over. Used by hire() to compute the transcript hash at
+// the commitment moment, and by the MCP fallback path to read the port.
+async function channel(jobId, peerInboxId) {
+  const rec = registry[jobId];
+  if (!rec) throw new Error("unknown job");
+  if (rec.status === "scrapped") throw new Error("port is scrapped");
+  const client = await portClient(jobId);
+  await client.conversations.syncAll();
+  for (const c of await client.conversations.list()) {
+    if (c.peerInboxId === peerInboxId) {
+      await c.sync();
+      return c;
+    }
+  }
+  throw new Error(`no channel with ${peerInboxId}`);
+}
+
+const contentSha256 = (m) =>
+  "0x" +
+  createHash("sha256")
+    .update(typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? ""))
+    .digest("hex");
+
 const routes = {
   "POST /ports": async (body) => {
     const { jobId } = body;
@@ -182,6 +206,53 @@ const routes = {
     return { signature: sig };
   },
   "POST /ports/:jobId/scrap": async (_body, { jobId }) => scrap(jobId),
+  "GET /ports/:jobId/conversations": async (_body, { jobId }) => {
+    const rec = registry[jobId];
+    if (!rec) throw new Error("unknown job");
+    if (rec.status === "scrapped") throw new Error("port is scrapped");
+    const client = await portClient(jobId);
+    await client.conversations.syncAll();
+    const out = [];
+    for (const c of await client.conversations.list()) {
+      await c.sync();
+      const messages = await c.messages();
+      const texts = messages.filter((m) => typeof m.content === "string");
+      out.push({
+        peerInboxId: c.peerInboxId,
+        messageCount: texts.length,
+        lastMessage: texts.at(-1)
+          ? { fromPort: texts.at(-1).senderInboxId === rec.inboxId, content: texts.at(-1).content }
+          : null,
+      });
+    }
+    return { jobId, conversations: out };
+  },
+  "GET /ports/:jobId/channel": async (_body, { jobId }, req) => {
+    const peer = new URL(req.url, "http://x").searchParams.get("peer");
+    const c = await channel(jobId, peer);
+    const rec = registry[jobId];
+    const messages = await c.messages();
+    return {
+      jobId,
+      peerInboxId: peer,
+      transcriptHash: transcriptHash(
+        messages.map((m) => ({
+          id: m.id,
+          sender: m.senderInboxId,
+          sentAtNs: String(m.sentAtNs),
+          contentSha256: contentSha256(m),
+        })),
+      ),
+      messages: messages
+        .filter((m) => typeof m.content === "string")
+        .map((m) => ({ fromPort: m.senderInboxId === rec.inboxId, content: m.content })),
+    };
+  },
+  "POST /ports/:jobId/messages": async (body, { jobId }) => {
+    const c = await channel(jobId, body.peerInboxId);
+    await c.send(body.content);
+    return { sent: true };
+  },
   "GET /ports/:jobId": async (_body, { jobId }) => {
     const rec = registry[jobId];
     if (!rec) throw new Error("unknown job");
@@ -201,8 +272,9 @@ createServer(async (req, res) => {
     res.end(JSON.stringify(obj));
   };
   try {
-    const m = req.url.match(/^\/ports\/([\w.-]+)(\/[\w/]+)?$/);
-    const key = m ? `${req.method} /ports/:jobId${m[2] ?? ""}` : `${req.method} ${req.url}`;
+    const path = new URL(req.url, "http://x").pathname;
+    const m = path.match(/^\/ports\/([\w.-]+)(\/[\w/]+)?$/);
+    const key = m ? `${req.method} /ports/:jobId${m[2] ?? ""}` : `${req.method} ${path}`;
     const handler = routes[key];
     if (!handler) return reply(404, { error: `no route ${key}` });
     reply(200, await handler(body, { jobId: m?.[1] }, req));
