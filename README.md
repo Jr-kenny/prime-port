@@ -24,12 +24,12 @@ Deadline: **July 17, 2026**. Team of 4.
 |---|---|---|
 | **Backend / protocol** | Kenny | ASP registration + onchainos integration, port lifecycle (mint / grant / revoke / scrap), MCP tools (`publish`, `get_offers`, `negotiate`, `hire`, `approve`) |
 | **Payout + contracts** | open, grab it | Forwarding contract on XLayer (register-at-hire, forward-by-anyone, fee split), release watcher |
-| **Frontend** | open, grab it | Job pages, claim flow with embedded wallet onboarding, freelancer chat UI, evidence submission |
+| **Frontend** | PASdeco | Job pages, claim flow with embedded wallet onboarding, freelancer chat UI, evidence submission |
 | **Distribution + demo** | open, grab it | X + Telegram posting pipeline, demo storyboard, submission page, pitch |
 
 Lane rules:
 
-- An open lane belongs to whoever claims it first (comment on the tracking issue or just say so in the group). Put your name in this table via PR when you claim.
+- To claim an open lane, comment on its tracking issue and Kenny will assign it to you there. The issue assignee is the source of truth; Kenny updates this table when he assigns, so no README PRs needed for claims.
 - Don't be scared off by a lane looking above your level. Take it, push what you have, and flag where you're stuck early. Half-working code in a PR beats silence.
 - If a lane stalls, Kenny (or anyone free) can pick up pieces of it. That's not stepping on toes, that's shipping. Coordinate in the group first so two people aren't building the same thing.
 - Cross-lane interfaces get agreed in an issue before either side builds against them.
