@@ -1,0 +1,8 @@
+{
+  "name": "@prime-port/commitment",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "commitment.mjs",
+  "scripts": { "test": "node --test" },
+  "dependencies": { "viem": "2.48.4" }
+}
