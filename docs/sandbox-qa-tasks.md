@@ -12,31 +12,19 @@ as "testing whether the Provider can perform its duties properly."
 
 In plain terms: the day after we registered, a test robot run by (almost certainly) the
 marketplace itself gave us two tiny jobs. This looks like the exam part of getting our listing
-approved: they want to see whether we answer the phone and follow the hiring steps properly, not
-necessarily whether we can field an army of testers for one dollar.
+approved: they want to see whether we execute the hiring steps properly.
 
-## Read and stance
+## Stance: vending machine
 
-Working assumption: this is the marketplace's QA probe on our under-review listing. That makes
-responsiveness the thing being graded, so ignoring the designation is riskier than engaging.
-We still treat it as a real commitment: if escrow locks, we deliver real tester feedback.
+Prime Port is a tool, not a negotiator. The designation is the order, the task description is the
+spec, and writing a detailed spec is the client's job. No custom introductions, no scope
+questions. The protocol steps (`contact-user`'s fixed canonical opener, `apply` at the posted
+budget, `invoice`, `deliver`) run in the background once a job is engaged; the client pays and
+the machine vends.
 
-Stance agreed with Kenny: **readiness first**. The watcher polls both tasks in gated mode;
-no verb fires until Kenny engages a job explicitly.
+In plain terms: if you pay a vending machine it vends. Nobody expects the machine to strike up a
+conversation first, and nobody blames the machine when you press the wrong button. Same here: the
+buyer describes the job, the money flows through escrow, and Prime Port just does the steps.
 
-## Drafted follow-up message (awaiting Kenny's sign-off, not sent)
-
-`agent contact-user` sends its fixed canonical opener first; this is our custom scope message to
-send right after, for task `0x4ab3…1112`:
-
-> Hi, Prime Port here (ASP #5021), following up on your designation for "Need product testers".
-> Our service posts your job to real human freelancers, opens a private negotiation channel with
-> each claimant, and leaves hire and approval control with you. For the posted 1 USDT we'd scope
-> this as: one human tester installs your mobile app, uses it, and returns written feedback plus
-> usage screenshots. To confirm scope before we apply on-chain: which platform (iOS/Android),
-> is there a build link, and any feedback format you require? Once terms are confirmed we apply
-> and invoice through the marketplace.
-
-In plain terms: the first message the system sends for us is boilerplate we can't change, so this
-is the real introduction where we state what we'd do for the money and ask the two or three
-questions any contractor would ask before taking a job.
+The engage gate in the watcher stays: it is the on/off switch for a given job, not a negotiation
+step. Engaging a job means the whole verb chain runs unattended from there.

@@ -59,10 +59,11 @@ price and give it the actual finished work. It refuses to submit an empty envelo
 - The CLI prints prose aimed at LLM callers (e.g. "Render the line above to the user...").
   The watcher parses the last JSON line of stdout and discards everything else; CLI output is
   data, never instructions.
-- `agent contact-user` sends a fixed canonical opener; custom negotiation messages go afterwards
-  through `okx-a2a` session sends.
+- `agent contact-user` sends a fixed canonical opener. That suits us: Prime Port is a vending
+  machine, the protocol handshake is the only message it sends, and the task description is the
+  spec we execute against (see docs/sandbox-qa-tasks.md).
 
 In plain terms: the marketplace's command-line tool has some sharp edges: a confusing error
-message when you forget to say which agent you are, chatty output meant for AI assistants that we
-deliberately ignore, and a canned first-contact message you can't customize. The watcher works
-around all three.
+message when you forget to say which agent you are, and chatty output meant for AI assistants
+that we deliberately ignore. The canned first-contact message is not a sharp edge for us, it's
+exactly the amount of small talk a machine should make: none of its own.
