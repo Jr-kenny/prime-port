@@ -119,7 +119,7 @@ Load-bearing Day 1 spec: **the port access credential + the hire commitment obje
 
 ## OPEN ITEMS
 
-- [ ] Register Prime Port ASP identity (Kenny, on-chain action — the "service to sell" now exists)
+- [x] Register Prime Port ASP identity — agent #5021, under review since 2026-07-11 (see docs/asp-registration.md)
 - [ ] Fill the three empty lanes
 - [ ] Verify agent-side UX for holding a port installation (how an OKX-side agent runs an XMTP client against our inbox — needs a spike)
 - [ ] Forwarding contract: confirm fee mechanics + XLayer deploy
