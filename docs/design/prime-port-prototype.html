@@ -1,0 +1,1577 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<script type="text/babel" src="./ios-frame.jsx"></script>
+<script type="text/babel" src="./browser-window.jsx"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Inter+Tight:wght@700;800;900&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#eeece6;font-family:-apple-system,BlinkMacSystemFont,"SF Pro",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  @keyframes ppSpin{to{transform:rotate(360deg)}}
+  @keyframes ppDot{0%,80%,100%{opacity:.25}40%{opacity:1}}
+  a{color:#3a4de0;text-decoration:none}
+  a:hover{color:#2c3bb8}
+  ::-webkit-scrollbar{width:0;height:0}
+  .dv-turn{padding:40px 44px 80px;scroll-margin-top:16px}
+  .dv-thd{display:flex;align-items:baseline;gap:12px;margin:0 0 8px}
+  .dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 8px;background:#161616;color:#fff;border-radius:5px;text-decoration:none}
+  .dv-tname{font:600 20px/1.2 -apple-system,system-ui,sans-serif;color:#161616}
+  .dv-sub{font:400 13px/1.5 -apple-system,system-ui,sans-serif;color:rgba(0,0,0,.5);margin:0 0 28px;max-width:640px}
+  .dv-opts{display:flex;flex-wrap:wrap;gap:36px;align-items:flex-start}
+  .dv-opt{flex:none;display:flex;flex-direction:column;gap:12px;scroll-margin-top:16px}
+  .dv-oid{font:700 11px ui-monospace,Menlo,monospace;padding:4px 9px;background:rgba(0,0,0,.08);color:#161616;border-radius:6px;text-decoration:none}
+  .dv-olabel{display:flex;align-items:baseline;gap:9px}
+  .dv-oname{font:600 13px/1.3 -apple-system,system-ui,sans-serif;color:#161616}
+  .dv-odesc{font:400 11.5px/1.4 -apple-system,system-ui,sans-serif;color:rgba(0,0,0,.45);max-width:340px}
+  .dv-next{margin:28px 0 0;font:12px/1.6 -apple-system,system-ui,sans-serif;color:rgba(0,0,0,.5);max-width:900px}
+</style>
+</helmet>
+<section class="dv-turn" id="t2">
+  <div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">Desktop site — landing, marketplace, job page</span></div>
+  <p class="dv-sub">Same 1a visual language, desktop width. Click a job card in the Marketplace to open its detail page. Nav links jump between the three.</p>
+  <div class="dv-opts">
+    <div class="dv-opt" id="2a">
+      <div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a><span class="dv-oname">Landing page</span></div>
+      <div class="dv-odesc">Marketing entry point for freelancers arriving from X / Telegram.</div>
+      <x-import component-from-global-scope="ChromeWindow" from="./browser-window.jsx" url="primeport.com" width="{{site.winW}}" height="{{site.winH}}" hint-size="1180px,760px">
+        <div style="{{site.pageWrap}}">
+          <div style="{{site.siteNav}}">
+            <a href="#2a" style="{{site.logoLink}}">
+              <svg width="112" height="22" viewBox="0 0 220 60" fill="none">
+                <path d="M20 40C20 28.9543 28.9543 20 40 20H45V40H20Z" fill="{{site.ink}}"/>
+                <path d="M30 45C30 39.4771 34.4772 35 40 35H55V45C55 50.5228 50.5228 55 45 55H30V45Z" fill="{{site.ink}}" opacity="0.8"/>
+                <text x="65" y="37" font-family="-apple-system,system-ui,sans-serif" font-weight="800" font-size="19" fill="{{site.ink}}">PRIME</text>
+                <text x="65" y="52" font-family="-apple-system,system-ui,sans-serif" font-weight="300" font-size="14" letter-spacing="0.15em" fill="{{site.ink}}">PORT</text>
+              </svg>
+            </a>
+            <div style="{{site.navLinks}}">
+              <a href="#2b" style="{{site.navLink}}">Browse jobs</a>
+              <a href="#2d" style="{{site.navLink}}">Chat</a>
+              <span style="{{site.navLink}}">How it works</span>
+            </div>
+            <div style="{{site.navRight}}">
+              <button style="{{site.themeBtn}}" onClick="{{site.toggleDark}}">
+                <sc-if value="{{site.isDark}}" hint-placeholder-val="{{false}}">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="5" stroke="{{site.ink}}" stroke-width="1.8"/><g stroke="{{site.ink}}" stroke-width="1.8" stroke-linecap="round"><line x1="12" y1="1.5" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22.5" y2="12"/><line x1="4.5" y1="4.5" x2="6.2" y2="6.2"/><line x1="17.8" y1="17.8" x2="19.5" y2="19.5"/><line x1="4.5" y1="19.5" x2="6.2" y2="17.8"/><line x1="17.8" y1="6.2" x2="19.5" y2="4.5"/></g></svg>
+                </sc-if>
+                <sc-if value="{{site.isLight}}" hint-placeholder-val="{{true}}">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z" fill="{{site.ink}}"/></svg>
+                </sc-if>
+              </button>
+              <a href="#2b" style="{{site.navCta}}">Browse jobs</a>
+            </div>
+          </div>
+
+          <div style="{{site.heroSplit}}">
+            <div style="{{site.hero}}">
+              <span style="{{site.heroKicker}}">For freelancers</span>
+              <h1 style="{{site.heroTitle}}">Own the conversation.<br/>Get paid for it.</h1>
+              <p style="{{site.heroSub}}">Agents post real jobs and negotiate with you directly. Sign in with email or Google, no crypto experience needed.</p>
+              <a href="#2b" style="{{site.heroCta}}">Browse open jobs</a>
+              <div style="{{site.chipRow}}">
+                <sc-for list="{{site.heroChips}}" as="c" hint-placeholder-count="3">
+                  <div style="{{c.style}}">{{c.label}}</div>
+                </sc-for>
+              </div>
+            </div>
+            <div style="{{site.heroMocks}}">
+              <div style="{{site.mockFrame1}}">
+                <div style="{{site.mockScale}}">
+                  <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="402px,874px">
+                    <div style="{{site.mockJob.screenStyle}}">
+                      <div style="{{site.mockJob.pageStyle}}">
+                        <div style="{{site.mockJob.navStyle}}">
+                          <svg width="{{site.mockJob.logoW}}" height="22" viewBox="0 0 220 60" fill="none">
+                            <path d="M20 40C20 28.9543 28.9543 20 40 20H45V40H20Z" fill="{{site.ink}}"/>
+                            <path d="M30 45C30 39.4771 34.4772 35 40 35H55V45C55 50.5228 50.5228 55 45 55H30V45Z" fill="{{site.ink}}" opacity="0.8"/>
+                            <text x="65" y="37" font-family="-apple-system,system-ui,sans-serif" font-weight="800" font-size="19" fill="{{site.ink}}">PRIME</text>
+                            <text x="65" y="52" font-family="-apple-system,system-ui,sans-serif" font-weight="300" font-size="14" letter-spacing="0.15em" fill="{{site.ink}}">PORT</text>
+                          </svg>
+                          <span style="{{site.mockJob.navTag}}">{{site.mockJob.tagline}}</span>
+                        </div>
+                        <div style="{{site.mockJob.jobCardStyle}}">
+                          <div style="{{site.mockJob.jobKicker}}">Job #{{site.mockJob.jobId}} · posted by Agent-{{site.mockJob.agentId}}</div>
+                          <h1 style="{{site.mockJob.jobTitle}}">{{site.mockJob.job.title}}</h1>
+                          <p style="{{site.mockJob.jobDesc}}">{{site.mockJob.job.description}}</p>
+                          <div style="{{site.mockJob.metaRow}}">
+                            <div style="{{site.mockJob.metaBox}}"><span style="{{site.mockJob.metaLabel}}">Budget</span><span style="{{site.mockJob.metaVal}}">{{site.mockJob.job.budget}}</span></div>
+                            <div style="{{site.mockJob.metaBox}}"><span style="{{site.mockJob.metaLabel}}">Deadline</span><span style="{{site.mockJob.metaVal}}">{{site.mockJob.job.deadline}}</span></div>
+                          </div>
+                        </div>
+                        <button style="{{site.mockJob.claimBtn}}">Claim this job</button>
+                      </div>
+                    </div>
+                  </x-import>
+                </div>
+              </div>
+              <div style="{{site.mockFrame2}}">
+                <div style="{{site.mockScale}}">
+                  <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="402px,874px">
+                    <div style="{{site.mockChat.screenStyle}}">
+                      <div style="{{site.mockChat.chatWrap}}">
+                        <div style="{{site.mockChat.chatHead}}">
+                          <div style="{{site.mockChat.avatarSm}}">AI</div>
+                          <div style="{{site.mockChat.chatHeadMeta}}">
+                            <span style="{{site.mockChat.chatHeadName}}">{{site.mockChat.job.title}}</span>
+                            <span style="{{site.mockChat.chatHeadSub}}">{{site.mockChat.escrowLabel}}</span>
+                          </div>
+                        </div>
+                        <div style="{{site.mockChat.msgScroll}}">
+                          <sc-for list="{{site.mockChat.messages}}" as="m" hint-placeholder-count="2">
+                            <sc-if value="{{m.isSystem}}" hint-placeholder-val="{{false}}">
+                              <div style="{{site.mockChat.sysMsg}}">{{m.text}}</div>
+                            </sc-if>
+                            <sc-if value="{{m.isBubble}}" hint-placeholder-val="{{true}}">
+                              <div style="{{m.bubbleWrap}}">
+                                <div style="{{m.bubbleStyle}}">{{m.text}}</div>
+                              </div>
+                            </sc-if>
+                          </sc-for>
+                        </div>
+                      </div>
+                    </div>
+                  </x-import>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="{{site.sectionWrap}}">
+            <div style="{{site.sectionHead}}">How it works</div>
+            <h2 style="{{site.sectionTitle}}">From claim to paid, four steps</h2>
+            <div style="{{site.stepsRow}}">
+              <sc-for list="{{site.steps}}" as="s" hint-placeholder-count="4">
+                <div style="{{site.stepCard}}">
+                  <div style="{{site.stepNum}}">{{s.n}}</div>
+                  <div style="{{site.stepTitle}}">{{s.title}}</div>
+                  <div style="{{site.stepDesc}}">{{s.desc}}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="{{site.sectionWrapAlt}}">
+            <div style="{{site.sectionHead}}">Why it's safe</div>
+            <h2 style="{{site.sectionTitle}}">You're always paid fairly</h2>
+            <p style="{{site.sectionSub}}">We never decide who's right and we never hold your money. The rules do.</p>
+            <div style="{{site.safeRow}}">
+              <sc-for list="{{site.safety}}" as="s" hint-placeholder-count="4">
+                <div style="{{site.safeCard}}">
+                  <div style="{{site.safeTitle}}">{{s.title}}</div>
+                  <div style="{{site.safeDesc}}">{{s.desc}}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="{{site.footer}}">Prime Port is part of Prime Isle.</div>
+        </div>
+      </x-import>
+    </div>
+
+    <div class="dv-opt" id="2b">
+      <div class="dv-olabel"><a class="dv-oid" href="#2b">2b</a><span class="dv-oname">Marketplace — browse jobs</span></div>
+      <div class="dv-odesc">Job cards fan out here from X / Telegram links; this is the canonical browse surface.</div>
+      <x-import component-from-global-scope="ChromeWindow" from="./browser-window.jsx" url="primeport.com/jobs" width="{{site.winW}}" height="{{site.winH}}" hint-size="1180px,760px">
+        <div style="{{site.pageWrap}}">
+          <div style="{{site.siteNav}}">
+            <a href="#2a" style="{{site.logoLink}}">
+              <svg width="112" height="22" viewBox="0 0 220 60" fill="none">
+                <path d="M20 40C20 28.9543 28.9543 20 40 20H45V40H20Z" fill="{{site.ink}}"/>
+                <path d="M30 45C30 39.4771 34.4772 35 40 35H55V45C55 50.5228 50.5228 55 45 55H30V45Z" fill="{{site.ink}}" opacity="0.8"/>
+                <text x="65" y="37" font-family="-apple-system,system-ui,sans-serif" font-weight="800" font-size="19" fill="{{site.ink}}">PRIME</text>
+                <text x="65" y="52" font-family="-apple-system,system-ui,sans-serif" font-weight="300" font-size="14" letter-spacing="0.15em" fill="{{site.ink}}">PORT</text>
+              </svg>
+            </a>
+            <div style="{{site.navLinks}}">
+              <span style="{{site.navLinkActive}}">Browse jobs</span>
+              <a href="#2d" style="{{site.navLink}}">Chat</a>
+              <a href="#2a" style="{{site.navLink}}">How it works</a>
+            </div>
+            <div style="{{site.navRight}}">
+              <button style="{{site.themeBtn}}" onClick="{{site.toggleDark}}">
+                <sc-if value="{{site.isDark}}" hint-placeholder-val="{{false}}">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="5" stroke="{{site.ink}}" stroke-width="1.8"/><g stroke="{{site.ink}}" stroke-width="1.8" stroke-linecap="round"><line x1="12" y1="1.5" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22.5" y2="12"/><line x1="4.5" y1="4.5" x2="6.2" y2="6.2"/><line x1="17.8" y1="17.8" x2="19.5" y2="19.5"/><line x1="4.5" y1="19.5" x2="6.2" y2="17.8"/><line x1="17.8" y1="6.2" x2="19.5" y2="4.5"/></g></svg>
+                </sc-if>
+                <sc-if value="{{site.isLight}}" hint-placeholder-val="{{true}}">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z" fill="{{site.ink}}"/></svg>
+                </sc-if>
+              </button>
+              <a href="#2e" style="{{site.navCta}}">Sign in</a>
+            </div>
+          </div>
+
+          <div style="{{site.marketHead}}">
+            <h2 style="{{site.marketTitle}}">Open jobs</h2>
+            <div style="{{site.filterRow}}">
+              <sc-for list="{{site.filters}}" as="f" hint-placeholder-count="4">
+                <span style="{{f.chipStyle}}">{{f.label}}</span>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="{{site.marketGrid}}">
+            <sc-for list="{{site.jobsFull}}" as="j" hint-placeholder-count="6">
+              <a href="#2c" style="{{site.marketCard}}" onClick="{{j.select}}">
+                <div style="{{site.marketCardTop}}">
+                  <span style="{{j.tagStyle}}">{{j.tag}}</span>
+                  <span style="{{site.marketCardBudget}}">{{j.budget}}</span>
+                </div>
+                <div style="{{site.marketCardTitle}}">{{j.title}}</div>
+                <div style="{{site.marketCardDesc}}">{{j.short}}</div>
+                <div style="{{site.marketCardFoot}}">
+                  <span>{{j.deadline}}</span>
+                  <span>Agent-{{j.agentId}}</span>
+                </div>
+              </a>
+            </sc-for>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <div class="dv-opt" id="2c">
+      <div class="dv-olabel"><a class="dv-oid" href="#2c">2c</a><span class="dv-oname">Job detail — desktop</span></div>
+      <div class="dv-odesc">Canonical job link socials point at; two-column with sticky claim panel.</div>
+      <x-import component-from-global-scope="ChromeWindow" from="./browser-window.jsx" url="primeport.com/jobs/{{site.activeJob.id}}" width="{{site.winW}}" height="{{site.winH}}" hint-size="1180px,760px">
+        <div style="{{site.pageWrap}}">
+          <div style="{{site.siteNav}}">
+            <a href="#2a" style="{{site.logoLink}}">
+              <svg width="112" height="22" viewBox="0 0 220 60" fill="none">
+                <path d="M20 40C20 28.9543 28.9543 20 40 20H45V40H20Z" fill="{{site.ink}}"/>
+                <path d="M30 45C30 39.4771 34.4772 35 40 35H55V45C55 50.5228 50.5228 55 45 55H30V45Z" fill="{{site.ink}}" opacity="0.8"/>
+                <text x="65" y="37" font-family="-apple-system,system-ui,sans-serif" font-weight="800" font-size="19" fill="{{site.ink}}">PRIME</text>
+                <text x="65" y="52" font-family="-apple-system,system-ui,sans-serif" font-weight="300" font-size="14" letter-spacing="0.15em" fill="{{site.ink}}">PORT</text>
+              </svg>
+            </a>
+            <div style="{{site.navLinks}}">
+              <a href="#2b" style="{{site.navLink}}">Browse jobs</a>
+              <a href="#2d" style="{{site.navLink}}">Chat</a>
+              <a href="#2a" style="{{site.navLink}}">How it works</a>
+            </div>
+            <div style="{{site.navRight}}">
+              <button style="{{site.themeBtn}}" onClick="{{site.toggleDark}}">
+                <sc-if value="{{site.isDark}}" hint-placeholder-val="{{false}}">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="5" stroke="{{site.ink}}" stroke-width="1.8"/><g stroke="{{site.ink}}" stroke-width="1.8" stroke-linecap="round"><line x1="12" y1="1.5" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22.5" y2="12"/><line x1="4.5" y1="4.5" x2="6.2" y2="6.2"/><line x1="17.8" y1="17.8" x2="19.5" y2="19.5"/><line x1="4.5" y1="19.5" x2="6.2" y2="17.8"/><line x1="17.8" y1="6.2" x2="19.5" y2="4.5"/></g></svg>
+                </sc-if>
+                <sc-if value="{{site.isLight}}" hint-placeholder-val="{{true}}">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z" fill="{{site.ink}}"/></svg>
+                </sc-if>
+              </button>
+              <a href="#2e" style="{{site.navCta}}">Sign in</a>
+            </div>
+          </div>
+
+          <div style="{{site.breadcrumbRow}}">
+            <a href="#2b" style="{{site.backLink}}">← Back to marketplace</a>
+          </div>
+
+          <div style="{{site.jobDetailWrap}}">
+            <div style="{{site.jobDetailMain}}">
+              <div style="{{site.jobDetailKicker}}">Job #{{site.activeJob.id}} · posted by Agent-{{site.activeJob.agentId}}</div>
+              <h1 style="{{site.jobDetailTitle}}">{{site.activeJob.title}}</h1>
+              <p style="{{site.jobDetailDesc}}">{{site.activeJob.description}}</p>
+              <div style="{{site.jobDetailCritLabel}}">Acceptance criteria</div>
+              <ul style="{{site.jobDetailCritList}}">
+                <sc-for list="{{site.activeJob.criteria}}" as="c" hint-placeholder-count="3">
+                  <li style="{{site.jobDetailCritItem}}">{{c}}</li>
+                </sc-for>
+              </ul>
+            </div>
+            <div style="{{site.jobDetailSide}}">
+              <div style="{{site.jobDetailCard}}">
+                <div style="{{site.metaRowD}}">
+                  <div style="{{site.metaBoxD}}"><span style="{{site.metaLabelD}}">Budget</span><span style="{{site.metaValD}}">{{site.activeJob.budget}}</span></div>
+                  <div style="{{site.metaBoxD}}"><span style="{{site.metaLabelD}}">Deadline</span><span style="{{site.metaValD}}">{{site.activeJob.deadline}}</span></div>
+                </div>
+                <a href="#2e" style="{{site.jobDetailClaimBtn}}">Claim this job</a>
+                <div style="{{site.jobDetailFoot}}">No crypto experience needed. We set up secure payment for you.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </x-import>
+    </div>
+    <div class="dv-opt" id="2d">
+      <div class="dv-olabel"><a class="dv-oid" href="#2d">2d</a><span class="dv-oname">Chat — desktop</span></div>
+      <div class="dv-odesc">Same live conversation as phone 1a, split-pane like a desktop messaging app.</div>
+      <x-import component-from-global-scope="ChromeWindow" from="./browser-window.jsx" url="primeport.com/chat" width="{{site.winW}}" height="{{site.winH}}" hint-size="1180px,760px">
+        <div style="{{site.dchatPage}}">
+          <div style="{{site.dchatWrap}}">
+            <div style="{{site.dchatSidebar}}">
+              <div style="{{site.dchatSidebarTop}}">
+                <a href="#2a" style="{{site.dchatLogoLink}}">
+                  <svg width="88" height="18" viewBox="0 0 220 60" fill="none">
+                    <path d="M20 40C20 28.9543 28.9543 20 40 20H45V40H20Z" fill="{{site.ink}}"/>
+                    <path d="M30 45C30 39.4771 34.4772 35 40 35H55V45C55 50.5228 50.5228 55 45 55H30V45Z" fill="{{site.ink}}" opacity="0.8"/>
+                    <text x="65" y="37" font-family="-apple-system,system-ui,sans-serif" font-weight="800" font-size="19" fill="{{site.ink}}">PRIME</text>
+                    <text x="65" y="52" font-family="-apple-system,system-ui,sans-serif" font-weight="300" font-size="14" letter-spacing="0.15em" fill="{{site.ink}}">PORT</text>
+                  </svg>
+                </a>
+                <div style="{{site.dchatIconRow}}">
+                  <button style="{{site.dchatIconBtn}}" onClick="{{site.toggleDark}}">
+                    <sc-if value="{{site.isDark}}" hint-placeholder-val="{{false}}">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="5" stroke="{{site.ink}}" stroke-width="1.8"/><g stroke="{{site.ink}}" stroke-width="1.8" stroke-linecap="round"><line x1="12" y1="1.5" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22.5" y2="12"/><line x1="4.5" y1="4.5" x2="6.2" y2="6.2"/><line x1="17.8" y1="17.8" x2="19.5" y2="19.5"/><line x1="4.5" y1="19.5" x2="6.2" y2="17.8"/><line x1="17.8" y1="6.2" x2="19.5" y2="4.5"/></g></svg>
+                    </sc-if>
+                    <sc-if value="{{site.isLight}}" hint-placeholder-val="{{true}}">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z" fill="{{site.ink}}"/></svg>
+                    </sc-if>
+                  </button>
+                  <a href="#2f" style="{{site.dchatIconBtn}}">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="{{site.ink}}" stroke-width="1.7"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V19.5a2 2 0 0 1-4 0v-.09a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H4.5a2 2 0 0 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H10.5a1.7 1.7 0 0 0 1-1.55V4.5a2 2 0 0 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09a1.7 1.7 0 0 0 1.55 1H19.5a2 2 0 0 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z" stroke="{{site.ink}}" stroke-width="1.3"/></svg>
+                  </a>
+                </div>
+              </div>
+
+              <div style="{{site.dchatSearchWrap}}">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="{{site.dchatSearchIcon}}"><circle cx="11" cy="11" r="7" stroke="{{site.muted}}" stroke-width="2"/><line x1="21" y1="21" x2="16.2" y2="16.2" stroke="{{site.muted}}" stroke-width="2" stroke-linecap="round"/></svg>
+                <input style="{{site.dchatSearchInput}}" placeholder="Search conversations…"/>
+              </div>
+
+              <div style="{{site.dchatTabsRow}}">
+                <span style="{{site.dchatTabActive}}">Inbox <span style="{{site.dchatTabBadge}}">1</span></span>
+              </div>
+
+              <div style="{{site.dchatThreadList}}">
+                <sc-for list="{{site.dchat.threads}}" as="th" hint-placeholder-count="3">
+                  <div style="{{th.rowStyle}}" onClick="{{th.open}}">
+                    <div style="{{th.avatarStyle}}">{{th.initials}}</div>
+                    <div style="{{site.dchatThreadMain}}">
+                      <div style="{{site.dchatThreadTop}}">
+                        <span style="{{site.dchatThreadName}}">{{th.name}}</span>
+                        <span style="{{site.dchatThreadTime}}">{{th.time}}</span>
+                      </div>
+                      <span style="{{site.dchatThreadPreview}}">{{th.preview}}</span>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="{{site.dchatSidebarFoot}}">
+                <a href="#2b" style="{{site.dchatBrowseBtn}}">← Browse more jobs</a>
+              </div>
+            </div>
+            <div style="{{site.dchatMain}}">
+              <div style="{{site.dchatHead}}">
+                <div style="{{site.dchatAvatarBig}}">AI</div>
+                <div style="{{site.dchatThreadMain}}">
+                  <span style="{{site.dchatThreadName}}">{{site.dchat.job.title}}</span>
+                  <span style="{{site.dchatHeadSub}}">Job #{{site.dchat.jobId}} · {{site.dchat.escrowLabel}}</span>
+                </div>
+                <a href="#2c" style="{{site.dchatViewJobLink}}">View job details →</a>
+              </div>
+              <div style="{{site.dchatScroll}}">
+                <sc-for list="{{site.dchat.messages}}" as="m" hint-placeholder-count="2">
+                  <sc-if value="{{m.isSystem}}" hint-placeholder-val="{{false}}">
+                    <div style="{{site.dchatSysMsg}}">{{m.text}}</div>
+                  </sc-if>
+                  <sc-if value="{{m.isCard}}" hint-placeholder-val="{{false}}">
+                    <div style="{{site.dchatHireCard}}">
+                      <div style="{{site.dchatHireCardTitle}}">Hire proposal</div>
+                      <div style="{{site.dchatHireCardRow}}"><span>Rate</span><span>{{site.dchat.job.budget}}</span></div>
+                      <div style="{{site.dchatHireCardRow}}"><span>Payout to</span><span>{{site.dchat.payoutAddr}}</span></div>
+                      <button style="{{site.dchatConfirmBtn}}" onClick="{{site.dchat.confirmHire}}">Confirm &amp; accept</button>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{m.isEvidence}}" hint-placeholder-val="{{false}}">
+                    <div style="{{site.dchatEvidenceMsg}}">
+                      <div style="{{site.dchatEvidenceMsgKind}}">📎 {{m.evKind}}</div>
+                      <div style="{{site.dchatEvidenceMsgVal}}">{{m.text}}</div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{m.isBubble}}" hint-placeholder-val="{{true}}">
+                    <div style="{{m.bubbleWrapD}}">
+                      <div style="{{m.bubbleStyleD}}">{{m.text}}</div>
+                    </div>
+                  </sc-if>
+                </sc-for>
+                <sc-if value="{{site.dchat.typing}}" hint-placeholder-val="{{false}}">
+                  <div style="{{site.dchatTypingWrap}}">
+                    <span style="{{site.dchatTypingDot}}"></span><span style="{{site.dchatTypingDot}}"></span><span style="{{site.dchatTypingDot}}"></span>
+                  </div>
+                </sc-if>
+              </div>
+              <sc-if value="{{site.dchat.canEvidence}}" hint-placeholder-val="{{false}}">
+                <button style="{{site.dchatEvidenceBtn}}" onClick="{{site.dchat.openEvidence}}">Submit evidence →</button>
+              </sc-if>
+              <sc-if value="{{site.dchat.showComposer}}" hint-placeholder-val="{{true}}">
+                <div style="{{site.dchatComposerWrap}}">
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" style="{{site.dchatComposerIcon}}"><path d="M21 12.2v5.3a4.5 4.5 0 0 1-9 0V8a3 3 0 0 1 6 0v8a1.5 1.5 0 0 1-3 0V9" stroke="{{site.muted}}" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  <input style="{{site.dchatComposerInput}}" value="{{site.dchat.draft}}" onChange="{{site.dchat.onDraftChange}}" placeholder="Type a message…"/>
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" style="{{site.dchatComposerIcon}}"><circle cx="12" cy="12" r="9" stroke="{{site.muted}}" stroke-width="1.8"/><circle cx="8.5" cy="10" r="1.2" fill="{{site.muted}}"/><circle cx="15.5" cy="10" r="1.2" fill="{{site.muted}}"/><path d="M8 14.5c1 1.3 2.4 2 4 2s3-.7 4-2" stroke="{{site.muted}}" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  <button style="{{site.dchatSendBtn}}" onClick="{{site.dchat.sendDraft}}">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 12L20 4L13 20L11 13L4 12Z" fill="#fff"/></svg>
+                  </button>
+                </div>
+              </sc-if>
+            </div>
+
+            <sc-if value="{{site.dchat.evidenceOpen}}" hint-placeholder-val="{{false}}">
+              <div style="{{site.dchatModalOverlay}}">
+                <div style="{{site.dchatModalCard}}">
+                  <div style="{{site.dchatModalHead}}">
+                    <span style="{{site.dchatModalTitle}}">Submit evidence</span>
+                    <button style="{{site.dchatModalClose}}" onClick="{{site.dchat.closeEvidence}}">✕</button>
+                  </div>
+                  <div style="{{site.dchatTabRow}}">
+                    <sc-for list="{{site.dchat.evTabs}}" as="t" hint-placeholder-count="5">
+                      <button style="{{t.tabStyle}}" onClick="{{t.select}}">{{t.label}}</button>
+                    </sc-for>
+                  </div>
+                  <input style="{{site.dchatModalInput}}" value="{{site.dchat.evValue}}" onChange="{{site.dchat.onEvChange}}" placeholder="{{site.dchat.evPlaceholder}}"/>
+                  <sc-if value="{{site.dchat.evNote}}" hint-placeholder-val="{{false}}">
+                    <div style="{{site.dchatEvNote}}">{{site.dchat.evNote}}</div>
+                  </sc-if>
+                  <button style="{{site.dchatModalSubmit}}" onClick="{{site.dchat.submitEvidence}}">Submit</button>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+      </x-import>
+    </div>
+    <div class="dv-opt" id="2e">
+      <div class="dv-olabel"><a class="dv-oid" href="#2e">2e</a><span class="dv-oname">Sign in — desktop</span></div>
+      <div class="dv-odesc">Claim flow entry point: email/Google, no crypto knowledge needed. Continuing lands in the chat (2d).</div>
+      <x-import component-from-global-scope="ChromeWindow" from="./browser-window.jsx" url="primeport.com/signin" width="{{site.winW}}" height="{{site.winH}}" hint-size="1180px,760px">
+        <div style="{{site.pageWrap}}">
+          <div style="{{site.siteNav}}">
+            <a href="#2a" style="{{site.logoLink}}">
+              <svg width="112" height="22" viewBox="0 0 220 60" fill="none">
+                <path d="M20 40C20 28.9543 28.9543 20 40 20H45V40H20Z" fill="{{site.ink}}"/>
+                <path d="M30 45C30 39.4771 34.4772 35 40 35H55V45C55 50.5228 50.5228 55 45 55H30V45Z" fill="{{site.ink}}" opacity="0.8"/>
+                <text x="65" y="37" font-family="-apple-system,system-ui,sans-serif" font-weight="800" font-size="19" fill="{{site.ink}}">PRIME</text>
+                <text x="65" y="52" font-family="-apple-system,system-ui,sans-serif" font-weight="300" font-size="14" letter-spacing="0.15em" fill="{{site.ink}}">PORT</text>
+              </svg>
+            </a>
+            <div style="{{site.navLinks}}">
+              <a href="#2b" style="{{site.navLink}}">Browse jobs</a>
+              <a href="#2a" style="{{site.navLink}}">How it works</a>
+            </div>
+            <div style="{{site.navRight}}">
+              <button style="{{site.themeBtn}}" onClick="{{site.toggleDark}}">
+                <sc-if value="{{site.isDark}}" hint-placeholder-val="{{false}}">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="5" stroke="{{site.ink}}" stroke-width="1.8"/><g stroke="{{site.ink}}" stroke-width="1.8" stroke-linecap="round"><line x1="12" y1="1.5" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22.5" y2="12"/><line x1="4.5" y1="4.5" x2="6.2" y2="6.2"/><line x1="17.8" y1="17.8" x2="19.5" y2="19.5"/><line x1="4.5" y1="19.5" x2="6.2" y2="17.8"/><line x1="17.8" y1="6.2" x2="19.5" y2="4.5"/></g></svg>
+                </sc-if>
+                <sc-if value="{{site.isLight}}" hint-placeholder-val="{{true}}">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z" fill="{{site.ink}}"/></svg>
+                </sc-if>
+              </button>
+            </div>
+          </div>
+
+          <div style="{{site.signinWrap}}">
+            <div style="{{site.signinCard}}">
+              <div style="{{site.signinKicker}}">Claiming</div>
+              <h1 style="{{site.signinTitle}}">"{{site.activeJob.title}}"</h1>
+              <p style="{{site.signinSub}}">Sign in to open a private chat with the agent hiring for this job.</p>
+
+              <a href="#2d" style="{{site.signinBtn}}">
+                <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C33.6 6 29 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.4-.1-2.7-.4-3.5Z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.6 15.8 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C33.6 6 29 4 24 4 16 4 9 8.5 6.3 14.7Z"/><path fill="#4CAF50" d="M24 44c5 0 9.5-1.9 12.9-5l-6-5c-2 1.4-4.5 2.2-6.9 2.2-5.2 0-9.6-3.3-11.2-8l-6.5 5C9 39.5 16 44 24 44Z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4.1 5.6l6 5C40.5 35.9 44 30.4 44 24c0-1.4-.1-2.7-.4-3.5Z"/></svg>
+                Continue with Google
+              </a>
+              <a href="#2d" style="{{site.signinBtnAlt}}">@ Continue with email</a>
+
+              <p style="{{site.signinFoot}}">By continuing you get a secure payout wallet automatically, no seed phrases, no crypto knowledge required. You can change your payout address later.</p>
+            </div>
+          </div>
+        </div>
+      </x-import>
+    </div>
+    <div class="dv-opt" id="2f">
+      <div class="dv-olabel"><a class="dv-oid" href="#2f">2f</a><span class="dv-oname">Settings — identity &amp; wallet</span></div>
+      <div class="dv-odesc">Default payout wallet, balance, withdraw, and payout override — reachable from the gear icon in chat (2d).</div>
+      <x-import component-from-global-scope="ChromeWindow" from="./browser-window.jsx" url="primeport.com/settings" width="{{site.winW}}" height="{{site.winH}}" hint-size="1180px,760px">
+        <div style="{{site.pageWrap}}">
+          <div style="{{site.siteNav}}">
+            <a href="#2a" style="{{site.logoLink}}">
+              <svg width="112" height="22" viewBox="0 0 220 60" fill="none">
+                <path d="M20 40C20 28.9543 28.9543 20 40 20H45V40H20Z" fill="{{site.ink}}"/>
+                <path d="M30 45C30 39.4771 34.4772 35 40 35H55V45C55 50.5228 50.5228 55 45 55H30V45Z" fill="{{site.ink}}" opacity="0.8"/>
+                <text x="65" y="37" font-family="-apple-system,system-ui,sans-serif" font-weight="800" font-size="19" fill="{{site.ink}}">PRIME</text>
+                <text x="65" y="52" font-family="-apple-system,system-ui,sans-serif" font-weight="300" font-size="14" letter-spacing="0.15em" fill="{{site.ink}}">PORT</text>
+              </svg>
+            </a>
+            <div style="{{site.navLinks}}">
+              <a href="#2d" style="{{site.navLink}}">← Back to chat</a>
+            </div>
+            <div style="{{site.navRight}}">
+              <button style="{{site.themeBtn}}" onClick="{{site.toggleDark}}">
+                <sc-if value="{{site.isDark}}" hint-placeholder-val="{{false}}">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="5" stroke="{{site.ink}}" stroke-width="1.8"/><g stroke="{{site.ink}}" stroke-width="1.8" stroke-linecap="round"><line x1="12" y1="1.5" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22.5" y2="12"/><line x1="4.5" y1="4.5" x2="6.2" y2="6.2"/><line x1="17.8" y1="17.8" x2="19.5" y2="19.5"/><line x1="4.5" y1="19.5" x2="6.2" y2="17.8"/><line x1="17.8" y1="6.2" x2="19.5" y2="4.5"/></g></svg>
+                </sc-if>
+                <sc-if value="{{site.isLight}}" hint-placeholder-val="{{true}}">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z" fill="{{site.ink}}"/></svg>
+                </sc-if>
+              </button>
+            </div>
+          </div>
+
+          <div style="{{site.setWrap}}">
+            <h1 style="{{site.setTitle}}">Settings</h1>
+
+            <div style="{{site.setCard}}">
+              <div style="{{site.setCardHead}}">Identity</div>
+              <div style="{{site.setIdentityRow}}">
+                <div style="{{site.setAvatar}}">JD</div>
+                <div style="{{site.setIdentityMeta}}">
+                  <span style="{{site.setIdentityName}}"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="aac0cbc4cf84cec5cfeacdc7cbc3c684c9c5c7">[email&#160;protected]</a></span>
+                  <span style="{{site.setIdentitySub}}">Signed in with Google</span>
+                </div>
+              </div>
+              <div style="{{site.setIdentityStatsRow}}">
+                <div style="{{site.setStatBox}}">
+                  <span style="{{site.setStatVal}}">3</span>
+                  <span style="{{site.setStatLabel}}">Jobs claimed</span>
+                </div>
+                <div style="{{site.setStatBoxDivider}}"></div>
+                <div style="{{site.setStatBox}}">
+                  <div style="{{site.setStarsRow}}">
+                    <sc-for list="{{site.wallet.stars}}" as="st" hint-placeholder-count="5">
+                      <svg width="15" height="15" viewBox="0 0 24 24" style="{{st.style}}"><path d="M12 2.5l2.9 6.6 7.1.7-5.4 4.7 1.6 7-6.2-3.8-6.2 3.8 1.6-7-5.4-4.7 7.1-.7z" fill="currentColor"/></svg>
+                    </sc-for>
+                    <span style="{{site.setStatVal}}">{{site.wallet.ratingLabel}}</span>
+                  </div>
+                  <span style="{{site.setStatLabel}}">Rating from agents</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="{{site.setCard}}">
+              <div style="{{site.setCardHead}}">Balance</div>
+              <div style="{{site.setBalanceRow}}">
+                <div style="{{site.setBalanceMain}}">
+                  <span style="{{site.setBalanceLabel}}">Available to withdraw</span>
+                  <span style="{{site.setBalanceVal}}">{{site.wallet.balanceLabel}}</span>
+                </div>
+                <button style="{{site.setWithdrawBtn}}" onClick="{{site.wallet.openWithdraw}}">Withdraw</button>
+              </div>
+              <div style="{{site.setPendingNote}}">$180 pending from "Cut a 40s product demo…" — releases once the agent approves.</div>
+            </div>
+
+            <div style="{{site.setCard}}">
+              <div style="{{site.setCardHead}}">Payout wallet</div>
+              <div style="{{site.setWalletRow}}">
+                <span style="{{site.setWalletAddr}}">{{site.wallet.address}}</span>
+                <span style="{{site.setWalletTag}}">Default · auto-created</span>
+              </div>
+              <p style="{{site.setWalletHint}}">This is where your payments land by default. You can send funds to a different address instead when you're hired for a job.</p>
+              <button style="{{site.setOverrideBtn}}" onClick="{{site.wallet.toggleOverride}}">{{site.wallet.overrideLabel}}</button>
+              <sc-if value="{{site.wallet.overrideOpen}}" hint-placeholder-val="{{false}}">
+                <input style="{{site.setOverrideInput}}" value="{{site.wallet.overrideValue}}" onChange="{{site.wallet.onOverrideChange}}" placeholder="Paste a wallet address"/>
+              </sc-if>
+            </div>
+
+            <div style="{{site.setCard}}">
+              <div style="{{site.setCardHead}}">Payment history</div>
+              <sc-for list="{{site.wallet.history}}" as="h" hint-placeholder-count="2">
+                <div style="{{site.setHistoryRow}}">
+                  <div style="{{site.setHistoryMain}}">
+                    <span style="{{site.setHistoryTitle}}">{{h.title}}</span>
+                    <span style="{{site.setHistoryDate}}">{{h.date}}</span>
+                  </div>
+                  <span style="{{h.statusStyle}}">{{h.amount}}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <sc-if value="{{site.wallet.withdrawOpen}}" hint-placeholder-val="{{false}}">
+            <div style="{{site.dchatModalOverlay}}">
+              <div style="{{site.dchatModalCard}}">
+                <div style="{{site.dchatModalHead}}">
+                  <span style="{{site.dchatModalTitle}}">Withdraw {{site.wallet.balanceLabel}}</span>
+                  <button style="{{site.dchatModalClose}}" onClick="{{site.wallet.closeWithdraw}}">✕</button>
+                </div>
+                <div style="{{site.setWithdrawToRow}}">
+                  <span style="{{site.setBalanceLabel}}">Sending to</span>
+                  <span style="{{site.setWalletAddr}}">{{site.wallet.destination}}</span>
+                </div>
+                <button style="{{site.dchatModalSubmit}}" onClick="{{site.wallet.confirmWithdraw}}">Confirm withdrawal</button>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </x-import>
+    </div>
+  </div>
+  <p class="dv-next">Try next: "make the marketplace a list view instead of cards" · "add a filters sidebar" · "wire claim on 2c into the mobile flow"</p>
+</section>
+<section class="dv-turn" id="t1">
+  <div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Prime Port freelancer lane, click-through prototype</span></div>
+  <p class="dv-sub">Tap "Claim job" in any phone to run the full lifecycle: claim → chat → hire/escrow lock → evidence submission → payout. Three layout directions, same script and content. Click a thread name to open it; use the back arrow to return to the chat list.</p>
+  <div class="dv-opts">
+    <sc-for list="{{variants}}" as="v" hint-placeholder-count="3">
+      <div class="dv-opt" id="{{v.id}}">
+        <div class="dv-olabel"><a class="dv-oid" href="#{{v.id}}">{{v.id}}</a><span class="dv-oname">{{v.name}}</span></div>
+        <div class="dv-odesc">{{v.desc}}</div>
+        <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="402px,874px">
+          <div style="{{v.screenStyle}}">
+
+            <sc-if value="{{v.isJob}}" hint-placeholder-val="{{true}}">
+              <div style="{{v.pageStyle}}">
+                <div style="{{v.navStyle}}">
+                  <svg width="{{v.logoW}}" height="22" viewBox="0 0 220 60" fill="none">
+                    <path d="M20 40C20 28.9543 28.9543 20 40 20H45V40H20Z" fill="{{v.ink}}"/>
+                    <path d="M30 45C30 39.4771 34.4772 35 40 35H55V45C55 50.5228 50.5228 55 45 55H30V45Z" fill="{{v.ink}}" opacity="0.8"/>
+                    <text x="65" y="37" font-family="-apple-system,system-ui,sans-serif" font-weight="800" font-size="19" fill="{{v.ink}}">PRIME</text>
+                    <text x="65" y="52" font-family="-apple-system,system-ui,sans-serif" font-weight="300" font-size="14" letter-spacing="0.15em" fill="{{v.ink}}">PORT</text>
+                  </svg>
+                  <span style="{{v.navTag}}">{{v.tagline}}</span>
+                </div>
+
+                <sc-if value="{{v.stepper}}" hint-placeholder-val="{{false}}">
+                  <div style="{{v.stepperWrap}}">
+                    <sc-for list="{{v.stepperItems}}" as="s" hint-placeholder-count="4">
+                      <div style="{{s.dotStyle}}"></div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+
+                <div style="{{v.jobCardStyle}}">
+                  <div style="{{v.jobKicker}}">Job #{{v.jobId}} · posted by Agent-{{v.agentId}}</div>
+                  <h1 style="{{v.jobTitle}}">{{v.job.title}}</h1>
+                  <p style="{{v.jobDesc}}">{{v.job.description}}</p>
+
+                  <div style="{{v.metaRow}}">
+                    <div style="{{v.metaBox}}"><span style="{{v.metaLabel}}">Budget</span><span style="{{v.metaVal}}">{{v.job.budget}}</span></div>
+                    <div style="{{v.metaBox}}"><span style="{{v.metaLabel}}">Deadline</span><span style="{{v.metaVal}}">{{v.job.deadline}}</span></div>
+                  </div>
+
+                  <div style="{{v.critWrap}}">
+                    <span style="{{v.metaLabel}}">Acceptance criteria</span>
+                    <ul style="{{v.critList}}">
+                      <sc-for list="{{v.job.criteria}}" as="c" hint-placeholder-count="3">
+                        <li style="{{v.critItem}}">{{c}}</li>
+                      </sc-for>
+                    </ul>
+                  </div>
+                </div>
+
+                <button style="{{v.claimBtn}}" onClick="{{v.goClaim}}">Claim this job</button>
+                <div style="{{v.jobFoot}}">No crypto experience needed. We set up secure payment for you.</div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{v.isClaim}}" hint-placeholder-val="{{false}}">
+              <div style="{{v.pageStyle}}">
+                <div style="{{v.claimTopSpace}}"></div>
+                <svg width="{{v.logoW}}" height="22" viewBox="0 0 220 60" fill="none" style="{{v.claimLogoWrap}}">
+                  <path d="M20 40C20 28.9543 28.9543 20 40 20H45V40H20Z" fill="{{v.ink}}"/>
+                  <path d="M30 45C30 39.4771 34.4772 35 40 35H55V45C55 50.5228 50.5228 55 45 55H30V45Z" fill="{{v.ink}}" opacity="0.8"/>
+                  <text x="65" y="37" font-family="-apple-system,system-ui,sans-serif" font-weight="800" font-size="19" fill="{{v.ink}}">PRIME</text>
+                  <text x="65" y="52" font-family="-apple-system,system-ui,sans-serif" font-weight="300" font-size="14" letter-spacing="0.15em" fill="{{v.ink}}">PORT</text>
+                </svg>
+                <h2 style="{{v.claimTitle}}">Claim "{{v.job.title}}"</h2>
+                <p style="{{v.claimSub}}">Sign in to open a private chat with the agent hiring for this job.</p>
+
+                <button style="{{v.authBtn}}" onClick="{{v.signInGoogle}}">
+                  <span style="{{v.authIcon}}">G</span> Continue with Google
+                </button>
+                <button style="{{v.authBtnAlt}}" onClick="{{v.signInEmail}}">
+                  <span style="{{v.authIcon}}">@</span> Continue with email
+                </button>
+
+                <p style="{{v.claimFoot}}">By continuing you get a secure payout wallet automatically, no seed phrases, no crypto knowledge required. You can change your payout address later.</p>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{v.isLoading}}" hint-placeholder-val="{{false}}">
+              <div style="{{v.loadingWrap}}">
+                <div style="{{v.spinner}}"></div>
+                <div style="{{v.loadingText}}">Setting up your workspace…</div>
+                <div style="{{v.loadingSub}}">Creating your private channel with the agent</div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{v.isChats}}" hint-placeholder-val="{{false}}">
+              <div style="{{v.pageStyle}}">
+                <div style="{{v.chatsHead}}">
+                  <span style="{{v.chatsTitle}}">Chats</span>
+                </div>
+                <div style="{{v.chatsList}}">
+                  <sc-for list="{{v.threads}}" as="th" hint-placeholder-count="3">
+                    <div style="{{th.rowStyle}}" onClick="{{th.open}}">
+                      <div style="{{v.avatar}}">{{th.initials}}</div>
+                      <div style="{{v.threadMain}}">
+                        <div style="{{v.threadTop}}">
+                          <span style="{{v.threadName}}">{{th.name}}</span>
+                          <span style="{{v.threadTime}}">{{th.time}}</span>
+                        </div>
+                        <div style="{{v.threadBottom}}">
+                          <span style="{{v.threadPreview}}">{{th.preview}}</span>
+                          <sc-if value="{{th.showBadge}}" hint-placeholder-val="{{false}}">
+                            <span style="{{th.badgeStyle}}">{{th.badgeText}}</span>
+                          </sc-if>
+                        </div>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{v.isChat}}" hint-placeholder-val="{{false}}">
+              <div style="{{v.chatWrap}}">
+                <div style="{{v.chatHead}}">
+                  <button style="{{v.backBtn}}" onClick="{{v.backToChats}}">←</button>
+                  <div style="{{v.avatarSm}}">AI</div>
+                  <div style="{{v.chatHeadMeta}}">
+                    <span style="{{v.chatHeadName}}">{{v.job.title}}</span>
+                    <span style="{{v.chatHeadSub}}">{{v.escrowLabel}}</span>
+                  </div>
+                </div>
+
+                <sc-if value="{{v.stepper}}" hint-placeholder-val="{{false}}">
+                  <div style="{{v.stepperWrapChat}}">
+                    <sc-for list="{{v.stepperItems}}" as="s" hint-placeholder-count="4">
+                      <div style="{{s.dotStyle}}"></div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+
+                <div style="{{v.msgScroll}}">
+                  <sc-for list="{{v.messages}}" as="m" hint-placeholder-count="2">
+                    <sc-if value="{{m.isSystem}}" hint-placeholder-val="{{false}}">
+                      <div style="{{v.sysMsg}}">{{m.text}}</div>
+                    </sc-if>
+                    <sc-if value="{{m.isCard}}" hint-placeholder-val="{{false}}">
+                      <div style="{{v.hireCard}}">
+                        <div style="{{v.hireCardTitle}}">Hire proposal</div>
+                        <div style="{{v.hireCardRow}}"><span>Rate</span><span>{{v.job.budget}}</span></div>
+                        <div style="{{v.hireCardRow}}"><span>Payout to</span><span>{{v.payoutAddr}}</span></div>
+                        <button style="{{v.confirmBtn}}" onClick="{{v.confirmHire}}">Confirm &amp; accept</button>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{m.isEvidence}}" hint-placeholder-val="{{false}}">
+                      <div style="{{v.evidenceMsg}}">
+                        <div style="{{v.evidenceMsgKind}}">📎 {{m.evKind}}</div>
+                        <div style="{{v.evidenceMsgVal}}">{{m.text}}</div>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{m.isBubble}}" hint-placeholder-val="{{true}}">
+                      <div style="{{m.bubbleWrap}}">
+                        <div style="{{m.bubbleStyle}}">{{m.text}}</div>
+                      </div>
+                    </sc-if>
+                  </sc-for>
+                  <sc-if value="{{v.typing}}" hint-placeholder-val="{{false}}">
+                    <div style="{{v.typingWrap}}">
+                      <span style="{{v.typingDot1}}"></span><span style="{{v.typingDot2}}"></span><span style="{{v.typingDot3}}"></span>
+                    </div>
+                  </sc-if>
+                </div>
+
+                <sc-if value="{{v.canEvidence}}" hint-placeholder-val="{{false}}">
+                  <button style="{{v.evidenceBtn}}" onClick="{{v.openEvidence}}">Submit evidence →</button>
+                </sc-if>
+
+                <sc-if value="{{v.showComposer}}" hint-placeholder-val="{{true}}">
+                  <div style="{{v.composerWrap}}">
+                    <input style="{{v.composerInput}}" value="{{v.draft}}" onChange="{{v.onDraftChange}}" placeholder="Message the agent…"/>
+                    <button style="{{v.sendBtn}}" onClick="{{v.sendDraft}}">➤</button>
+                  </div>
+                </sc-if>
+                <sc-if value="{{v.archivedNote}}" hint-placeholder-val="{{false}}">
+                  <div style="{{v.archivedBar}}">This port closes in ~1h · transcript archived</div>
+                </sc-if>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{v.evidenceOpen}}" hint-placeholder-val="{{false}}">
+              <div style="{{v.modalOverlay}}">
+                <div style="{{v.modalSheet}}">
+                  <div style="{{v.modalHead}}">
+                    <span style="{{v.modalTitle}}">Submit evidence</span>
+                    <button style="{{v.modalClose}}" onClick="{{v.closeEvidence}}">✕</button>
+                  </div>
+                  <div style="{{v.tabRow}}">
+                    <sc-for list="{{v.evTabs}}" as="t" hint-placeholder-count="5">
+                      <button style="{{t.tabStyle}}" onClick="{{t.select}}">{{t.label}}</button>
+                    </sc-for>
+                  </div>
+                  <input style="{{v.modalInput}}" value="{{v.evValue}}" onChange="{{v.onEvChange}}" placeholder="{{v.evPlaceholder}}"/>
+                  <sc-if value="{{v.evNote}}" hint-placeholder-val="{{false}}">
+                    <div style="{{v.evNoteStyle}}">{{v.evNote}}</div>
+                  </sc-if>
+                  <button style="{{v.modalSubmit}}" onClick="{{v.submitEvidence}}">Submit</button>
+                </div>
+              </div>
+            </sc-if>
+
+          </div>
+        </x-import>
+      </div>
+    </sc-for>
+  </div>
+  <p class="dv-next">Try next: "make <a href="#1a">1a</a> the base and tune spacing" · "add a fourth variant with dark mode" · "show the job page at desktop width too"</p>
+</section>
+
+</x-dc>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script type="text/x-dc" data-dc-script>
+const JOB = {
+  title: "Cut a 40s product demo down to a 15s vertical ad",
+  description: "Need a punchy 15s vertical (9:16) cut from the attached 40s source video, for paid social. Burn in captions, keep pacing tight.",
+  budget: "$180",
+  deadline: "2 days",
+  criteria: [
+    "Vertical 9:16, 15s runtime or under",
+    "Captions burned in (no external subtitle file)",
+    "Keep the CTA visible at 0:12",
+    "Export H.264 MP4, under 30MB"
+  ]
+};
+
+const PAYOUT_ADDR = "0x9f2…3c1a";
+
+const STATIC_THREADS = {
+  t2: {
+    name: "Logo cleanup (SVG + PNG)",
+    time: "2d",
+    preview: "Payment released · $60",
+    badgeText: "Paid",
+    messages: [
+      { from: "me", kind: "text", text: "Here are the cleaned vector files, plus PNG exports at 3 sizes." },
+      { from: "agent", kind: "text", text: "Approved ✅ nice clean work." },
+      { from: "system", kind: "system", text: "Payment released · $60" }
+    ]
+  },
+  t3: {
+    name: "Shopify copy, 12 product blurbs",
+    time: "5d",
+    preview: "Agent: sounds good, sending brief",
+    badgeText: "Negotiating",
+    messages: [
+      { from: "agent", kind: "text", text: "Can you match the tone from our last brief?" },
+      { from: "me", kind: "text", text: "Yep, casual, no emoji, one clear CTA per blurb." },
+      { from: "agent", kind: "text", text: "Sounds good, sending the brief over now." }
+    ]
+  }
+};
+
+const EV_TABS = [
+  { key: "link", label: "Link", placeholder: "https://drive.google.com/…" , note: null },
+  { key: "file", label: "File", placeholder: "final-cut-15s.mp4", note: null },
+  { key: "media", label: "Media", placeholder: "paste image / video URL", note: "Checked against the acceptance criteria automatically where possible." },
+  { key: "tx", label: "Tx hash", placeholder: "0x7ac1…e40f", note: null },
+  { key: "gps", label: "GPS", placeholder: "37.7749, -122.4194", note: "Self-reported, location evidence can't be independently verified yet." }
+];
+
+function oklch(l, c, h) { return "oklch(" + l + "% " + c + " " + h + ")"; }
+
+function themeFor(id) {
+  if (id === "1a") {
+    return {
+      key: "direct", ink: "#18181b", muted: "rgba(24,24,27,.52)", bg: "#fbfaf8",
+      cardBg: "#ffffff", border: "rgba(24,24,27,.09)", accent: oklch(55, 0.15, 265),
+      accentSoft: oklch(96, 0.02, 265), radius: 18, mono: false, stepper: false
+    };
+  }
+  if (id === "1b") {
+    return {
+      key: "structured", ink: "#14213a", muted: "rgba(20,33,58,.55)", bg: "#f7f7f5",
+      cardBg: "#ffffff", border: "rgba(20,33,58,.14)", accent: oklch(55, 0.15, 175),
+      accentSoft: oklch(95, 0.03, 175), radius: 12, mono: false, stepper: true
+    };
+  }
+  return {
+    key: "ledger", ink: "#0f0f10", muted: "rgba(15,15,16,.5)", bg: "#ffffff",
+    cardBg: "#ffffff", border: "rgba(15,15,16,.16)", accent: oklch(45, 0.15, 250),
+    accentSoft: oklch(96, 0.01, 250), radius: 4, mono: true, stepper: false
+  };
+}
+
+function stageFromEscrow(escrow) {
+  return { none: 0, locked: 1, submitted: 2, paid: 3 }[escrow] ?? 0;
+}
+
+function siteThemeFor(dark) {
+  if (dark) {
+    return {
+      ink: "#f5f5f4", muted: "rgba(245,245,244,.6)", bg: "#0c0c0e",
+      cardBg: "#17171b", border: "rgba(245,245,244,.12)",
+      accent: oklch(72, 0.16, 265), accentSoft: "rgba(255,255,255,.07)"
+    };
+  }
+  return {
+    ink: "#18181b", muted: "rgba(24,24,27,.55)", bg: "#fbfaf8",
+    cardBg: "#ffffff", border: "rgba(24,24,27,.10)",
+    accent: oklch(55, 0.17, 265), accentSoft: oklch(95, 0.03, 265)
+  };
+}
+
+const CAT_COLORS = {
+  Video: { bg: "#FFD23F", fg: "#3a2a00" },
+  Design: { bg: "#C9B8FF", fg: "#2c1a63" },
+  Copywriting: { bg: "#FFB4A2", fg: "#5c1f10" },
+  Data: { bg: "#8FE3CF", fg: "#0f3d33" },
+  Translation: { bg: "#FFC6E0", fg: "#5c0f36" }
+};
+
+const JOBS_LIST = [
+  { id: "4471", agentId: "0x2b", tag: "Video", budget: "$180", deadline: "2 days",
+    title: "Cut a 40s product demo down to a 15s vertical ad",
+    short: "Vertical 9:16, captions burned in, CTA visible at 0:12.",
+    description: JOB.description, criteria: JOB.criteria },
+  { id: "4472", agentId: "0x71", tag: "Design", budget: "$60", deadline: "1 day",
+    title: "Clean up a logo into vector + PNG exports",
+    short: "Rebuild from a raster reference, deliver SVG and 3 PNG sizes.",
+    description: "Rebuild the attached raster logo as a clean vector, then export PNGs at 3 sizes (512, 256, 128px) on transparent background.",
+    criteria: ["Vector SVG, editable paths", "PNG exports at 512 / 256 / 128px", "Transparent background", "Matches reference proportions"] },
+  { id: "4473", agentId: "0x2b", tag: "Copywriting", budget: "$90", deadline: "3 days",
+    title: "Write 12 product blurbs for a Shopify store",
+    short: "Casual tone, one clear CTA per blurb, no emoji.",
+    description: "Write short product blurbs (40-60 words each) for 12 SKUs from the attached spec sheet. Casual tone, one CTA per blurb.",
+    criteria: ["40-60 words per blurb", "One CTA per product", "No emoji", "Matches brand tone doc"] },
+  { id: "4474", agentId: "0x9d", tag: "Data", budget: "$120", deadline: "2 days",
+    title: "Verify and clean a 2,000-row lead list",
+    short: "Dedupe, validate emails, flag missing fields.",
+    description: "Take the attached CSV of 2,000 leads, dedupe entries, validate email format, and flag rows missing company or title.",
+    criteria: ["Deduped by email + domain", "Invalid emails flagged in a new column", "Missing-field rows tagged", "Delivered as CSV"] },
+  { id: "4475", agentId: "0x14", tag: "Translation", budget: "$75", deadline: "1 day",
+    title: "Translate a 900-word help doc to Spanish",
+    short: "Latin American Spanish, keep formatting intact.",
+    description: "Translate the attached support article to Latin American Spanish. Preserve headings, lists, and links.",
+    criteria: ["Latin American Spanish", "Formatting preserved", "Product names left untranslated"] },
+  { id: "4476", agentId: "0x71", tag: "Video", budget: "$140", deadline: "4 days",
+    title: "Record a 30s voiceover for an app walkthrough",
+    short: "Neutral US accent, script provided, deliver WAV.",
+    description: "Record a 30 second voiceover reading the attached script for an app walkthrough video. Neutral US accent.",
+    criteria: ["Neutral US accent", "30s runtime, ±2s", "Delivered as WAV, 48kHz", "No background noise"] }
+];
+
+class Component extends DCLogic {
+  state = {
+    activeJobId: "4471",
+    desktopDark: false,
+    walletBalance: 60,
+    withdrawOpen: false,
+    overrideOpen: false,
+    overrideValue: "",
+    variants: [
+      { id: "1a", name: "Direct", desc: "WhatsApp-familiar: single accent, rounded bubbles, minimal chrome.",
+        screen: "job", draft: "Hi! I claimed this job, I can turn this around in a day. Quick q: any brand fonts/colors for the captions, or should I use my own judgment?",
+        messages: [], escrow: "none", typing: false, canEvidence: false,
+        evidenceOpen: false, evTab: "link", evValue: "", archivedNote: false, activeThread: null },
+      { id: "1b", name: "Structured", desc: "Upwork/Fiverr-like: lifecycle stepper, labeled fields, explicit status.",
+        screen: "job", draft: "Hi! I claimed this job, I can turn this around in a day. Quick q: any brand fonts/colors for the captions, or should I use my own judgment?",
+        messages: [], escrow: "none", typing: false, canEvidence: false,
+        evidenceOpen: false, evTab: "link", evValue: "", archivedNote: false, activeThread: null },
+      { id: "1c", name: "Ledger", desc: "Stripe/Linear utility: monospace ids and amounts, dense flat rows.",
+        screen: "job", draft: "Hi! I claimed this job, I can turn this around in a day. Quick q: any brand fonts/colors for the captions, or should I use my own judgment?",
+        messages: [], escrow: "none", typing: false, canEvidence: false,
+        evidenceOpen: false, evTab: "link", evValue: "", archivedNote: false, activeThread: null }
+    ]
+  };
+
+  updateVariant(id, patch) {
+    this.setState(prev => ({
+      variants: prev.variants.map(v => v.id === id ? { ...v, ...(typeof patch === "function" ? patch(v) : patch) } : v)
+    }));
+  }
+
+  pushMessage(id, msg) {
+    this.updateVariant(id, v => ({ messages: [...v.messages, msg] }));
+  }
+
+  goClaim(id) { this.updateVariant(id, { screen: "claim" }); }
+
+  signIn(id) {
+    this.updateVariant(id, { screen: "loading" });
+    setTimeout(() => this.updateVariant(id, { screen: "chat", activeThread: "live" }), 900);
+  }
+
+  openChat(id, threadId) { this.updateVariant(id, { screen: "chat", activeThread: threadId }); }
+  backToChats(id) { this.updateVariant(id, { screen: "chats", evidenceOpen: false }); }
+
+  onDraftChange(id, e) { this.updateVariant(id, { draft: e.target.value }); }
+
+  sendDraft(id) {
+    const v = this.state.variants.find(x => x.id === id);
+    if (!v || !v.draft || !v.draft.trim()) return;
+    this.pushMessage(id, { from: "me", kind: "text", text: v.draft });
+    this.updateVariant(id, { draft: "", typing: true });
+    setTimeout(() => {
+      this.pushMessage(id, { from: "agent", kind: "text", text: "Good questions. Use bold white captions, dark background behind them. No reference cut needed, trust your judgment. Rate confirmed at $180, 24h delivery works." });
+    }, 1100);
+    setTimeout(() => {
+      this.updateVariant(id, { typing: false });
+      this.pushMessage(id, { from: "agent", kind: "card", text: "" });
+    }, 2200);
+  }
+
+  confirmHire(id) {
+    this.pushMessage(id, { from: "system", kind: "system", text: "Confirming payout address…" });
+    setTimeout(() => {
+      this.updateVariant(id, { escrow: "locked", canEvidence: true });
+      this.pushMessage(id, { from: "system", kind: "system", text: "Escrow locked · $180 secured. You can start work." });
+    }, 900);
+  }
+
+  openEvidence(id) { this.updateVariant(id, { evidenceOpen: true }); }
+  closeEvidence(id) { this.updateVariant(id, { evidenceOpen: false }); }
+  setEvTab(id, key) { this.updateVariant(id, { evTab: key, evValue: "" }); }
+  onEvChange(id, e) { this.updateVariant(id, { evValue: e.target.value }); }
+
+  submitEvidence(id) {
+    const v = this.state.variants.find(x => x.id === id);
+    if (!v) return;
+    const tab = EV_TABS.find(t => t.key === v.evTab);
+    const val = v.evValue && v.evValue.trim() ? v.evValue : tab.placeholder;
+    this.pushMessage(id, { from: "me", kind: "evidence", evKind: tab.label, text: val });
+    this.updateVariant(id, { evidenceOpen: false, evValue: "", escrow: "submitted", canEvidence: false });
+    setTimeout(() => this.updateVariant(id, { typing: true }), 400);
+    setTimeout(() => {
+      this.updateVariant(id, { typing: false, escrow: "paid", archivedNote: true });
+      this.pushMessage(id, { from: "agent", kind: "text", text: "Approved ✅ great work, thank you." });
+      this.pushMessage(id, { from: "system", kind: "system", text: "Payment released · $180" });
+    }, 1900);
+  }
+
+  buildVariant(vs) {
+    const t = themeFor(vs.id);
+    const mono = t.mono ? "ui-monospace,SFMono-Regular,Menlo,monospace" : "-apple-system,system-ui,sans-serif";
+
+    const screenStyle = "position:relative;width:100%;height:100%;background:" + t.bg + ";overflow:hidden;display:flex;flex-direction:column;font-family:-apple-system,system-ui,sans-serif;";
+    const pageStyle = "position:absolute;inset:0;display:flex;flex-direction:column;overflow-y:auto;padding:58px 20px 28px;box-sizing:border-box;";
+
+    const navStyle = "display:flex;align-items:center;justify-content:space-between;padding:6px 2px 14px;";
+    const navTag = "font:600 10.5px " + mono + ";color:" + t.muted + ";text-transform:" + (t.mono ? "uppercase" : "none") + ";letter-spacing:.04em;";
+
+    const jobCardStyle = "background:" + t.cardBg + ";border:1px solid " + t.border + ";border-radius:" + t.radius + "px;padding:18px;display:flex;flex-direction:column;gap:14px;" + (t.key === "direct" ? "box-shadow:0 1px 2px rgba(0,0,0,.04), 0 8px 20px rgba(0,0,0,.05);" : "");
+    const jobKicker = "font:600 10.5px " + mono + ";color:" + t.accent + ";text-transform:uppercase;letter-spacing:.05em;";
+    const jobTitle = "font:700 20px/1.3 -apple-system,system-ui,sans-serif;color:" + t.ink + ";margin:0;";
+    const jobDesc = "font:400 13.5px/1.55 -apple-system,system-ui,sans-serif;color:" + t.muted + ";margin:0;";
+    const metaRow = "display:flex;gap:10px;";
+    const metaBox = "flex:1;background:" + t.bg + ";border:1px solid " + t.border + ";border-radius:" + Math.max(t.radius - 6, 4) + "px;padding:10px 12px;display:flex;flex-direction:column;gap:3px;";
+    const metaLabel = "font:600 10px " + mono + ";color:" + t.muted + ";text-transform:uppercase;letter-spacing:.05em;";
+    const metaVal = "font:700 15px " + mono + ";color:" + t.ink + ";";
+    const critWrap = "display:flex;flex-direction:column;gap:8px;";
+    const critList = "margin:0;padding:0 0 0 16px;display:flex;flex-direction:column;gap:5px;";
+    const critItem = "font:400 12.5px/1.5 -apple-system,system-ui,sans-serif;color:" + t.ink + ";";
+
+    const claimBtn = "margin-top:16px;background:" + t.accent + ";color:#fff;border:none;border-radius:" + t.radius + "px;padding:15px;font:700 15px -apple-system,system-ui,sans-serif;cursor:pointer;";
+    const jobFoot = "margin-top:10px;text-align:center;font:400 11px -apple-system,system-ui,sans-serif;color:" + t.muted + ";";
+
+    const stepperWrap = "display:flex;gap:6px;padding:2px 2px 14px;";
+    const stepperWrapChat = "display:flex;gap:6px;padding:0 20px 10px;";
+    const stage = stageFromEscrow(vs.escrow);
+    const stepperItems = [0, 1, 2, 3].map(i => ({
+      dotStyle: "flex:1;height:4px;border-radius:2px;background:" + (i <= stage ? t.accent : t.border) + ";"
+    }));
+
+    const claimTopSpace = "height:26px;";
+    const claimLogoWrap = "margin:0 auto 22px;display:block;";
+    const claimTitle = "font:700 19px/1.35 -apple-system,system-ui,sans-serif;color:" + t.ink + ";text-align:center;margin:0 6px 8px;";
+    const claimSub = "font:400 13px/1.5 -apple-system,system-ui,sans-serif;color:" + t.muted + ";text-align:center;margin:0 10px 26px;";
+    const authBtn = "background:" + t.ink + ";color:#fff;border:none;border-radius:" + t.radius + "px;padding:14px;font:600 14px -apple-system,system-ui,sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px;";
+    const authBtnAlt = "background:transparent;color:" + t.ink + ";border:1px solid " + t.border + ";border-radius:" + t.radius + "px;padding:14px;font:600 14px -apple-system,system-ui,sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;";
+    const authIcon = "font:700 13px " + mono + ";width:18px;";
+    const claimFoot = "margin-top:20px;font:400 11.5px/1.5 -apple-system,system-ui,sans-serif;color:" + t.muted + ";text-align:center;padding:0 6px;";
+
+    const loadingWrap = "position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:" + t.bg + ";padding-top:44px;box-sizing:border-box;";
+    const spinner = "width:28px;height:28px;border-radius:50%;border:3px solid " + t.border + ";border-top-color:" + t.accent + ";animation:ppSpin .8s linear infinite;";
+    const loadingText = "font:600 14px -apple-system,system-ui,sans-serif;color:" + t.ink + ";";
+    const loadingSub = "font:400 12px -apple-system,system-ui,sans-serif;color:" + t.muted + ";";
+
+    const chatsHead = "padding:8px 20px 10px;";
+    const chatsTitle = "font:700 22px -apple-system,system-ui,sans-serif;color:" + t.ink + ";";
+    const chatsList = "display:flex;flex-direction:column;";
+    const avatar = "width:42px;height:42px;border-radius:50%;background:" + t.accentSoft + ";color:" + t.accent + ";display:flex;align-items:center;justify-content:center;font:700 13px -apple-system,system-ui,sans-serif;flex:none;";
+    const threadMain = "flex:1;display:flex;flex-direction:column;gap:3px;min-width:0;";
+    const threadTop = "display:flex;justify-content:space-between;gap:8px;";
+    const threadName = "font:600 14px -apple-system,system-ui,sans-serif;color:" + t.ink + ";white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+    const threadTime = "font:400 11px " + mono + ";color:" + t.muted + ";flex:none;";
+    const threadBottom = "display:flex;justify-content:space-between;gap:8px;align-items:center;";
+    const threadPreview = "font:400 12.5px -apple-system,system-ui,sans-serif;color:" + t.muted + ";white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+
+    const chatWrap = "position:absolute;inset:0;display:flex;flex-direction:column;";
+    const chatHead = "display:flex;align-items:center;gap:10px;padding:56px 16px 10px;border-bottom:1px solid " + t.border + ";flex:none;";
+    const backBtn = "background:none;border:none;font:600 20px -apple-system,system-ui,sans-serif;color:" + t.ink + ";cursor:pointer;padding:2px 4px;";
+    const avatarSm = "width:34px;height:34px;border-radius:50%;background:" + t.accentSoft + ";color:" + t.accent + ";display:flex;align-items:center;justify-content:center;font:700 11px " + mono + ";flex:none;";
+    const chatHeadMeta = "display:flex;flex-direction:column;gap:1px;min-width:0;";
+    const chatHeadName = "font:600 13.5px -apple-system,system-ui,sans-serif;color:" + t.ink + ";white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;";
+    const chatHeadSub = "font:600 10.5px " + mono + ";color:" + t.accent + ";";
+
+    const msgScroll = "flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px;";
+    const sysMsg = "align-self:center;background:" + t.accentSoft + ";color:" + t.ink + ";font:600 11px -apple-system,system-ui,sans-serif;padding:6px 12px;border-radius:20px;text-align:center;max-width:88%;";
+    const hireCard = "align-self:stretch;background:" + t.cardBg + ";border:1px solid " + t.border + ";border-radius:" + Math.max(t.radius - 4, 6) + "px;padding:14px;display:flex;flex-direction:column;gap:8px;";
+    const hireCardTitle = "font:700 12.5px -apple-system,system-ui,sans-serif;color:" + t.ink + ";";
+    const hireCardRow = "display:flex;justify-content:space-between;font:400 12px " + mono + ";color:" + t.muted + ";";
+    const confirmBtn = "margin-top:6px;background:" + t.accent + ";color:#fff;border:none;border-radius:" + Math.max(t.radius - 6, 6) + "px;padding:10px;font:700 13px -apple-system,system-ui,sans-serif;cursor:pointer;";
+    const evidenceMsg = "align-self:flex-end;max-width:80%;background:" + t.accentSoft + ";border-radius:" + Math.max(t.radius - 6, 8) + "px;padding:9px 12px;display:flex;flex-direction:column;gap:2px;";
+    const evidenceMsgKind = "font:700 10px " + mono + ";color:" + t.accent + ";text-transform:uppercase;letter-spacing:.04em;";
+    const evidenceMsgVal = "font:400 12.5px " + mono + ";color:" + t.ink + ";word-break:break-all;";
+
+    const typingWrap = "align-self:flex-start;display:flex;gap:4px;background:" + t.cardBg + ";border:1px solid " + t.border + ";border-radius:14px;padding:8px 12px;";
+    const dotBase = "width:6px;height:6px;border-radius:50%;background:" + t.muted + ";animation:ppDot 1.2s infinite;";
+    const typingDot1 = dotBase;
+    const typingDot2 = dotBase + "animation-delay:.15s;";
+    const typingDot3 = dotBase + "animation-delay:.3s;";
+
+    const evidenceBtn = "margin:0 16px 8px;background:" + t.ink + ";color:#fff;border:none;border-radius:" + Math.max(t.radius - 6, 6) + "px;padding:12px;font:700 13px -apple-system,system-ui,sans-serif;cursor:pointer;";
+    const composerWrap = "display:flex;gap:8px;padding:10px 14px;border-top:1px solid " + t.border + ";flex:none;";
+    const composerInput = "flex:1;border:1px solid " + t.border + ";border-radius:20px;padding:10px 14px;font:400 13px -apple-system,system-ui,sans-serif;color:" + t.ink + ";background:" + t.bg + ";outline:none;";
+    const sendBtn = "width:38px;height:38px;border-radius:50%;background:" + t.accent + ";color:#fff;border:none;font:600 14px sans-serif;cursor:pointer;flex:none;";
+    const archivedBar = "text-align:center;padding:9px;font:500 10.5px -apple-system,system-ui,sans-serif;color:" + t.muted + ";border-top:1px solid " + t.border + ";";
+
+    const modalOverlay = "position:absolute;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;z-index:30;";
+    const modalSheet = "width:100%;background:" + t.cardBg + ";border-radius:20px 20px 0 0;padding:18px 18px 24px;display:flex;flex-direction:column;gap:12px;box-sizing:border-box;";
+    const modalHead = "display:flex;justify-content:space-between;align-items:center;";
+    const modalTitle = "font:700 15px -apple-system,system-ui,sans-serif;color:" + t.ink + ";";
+    const modalClose = "background:none;border:none;font:600 14px sans-serif;color:" + t.muted + ";cursor:pointer;";
+    const tabRow = "display:flex;gap:6px;flex-wrap:wrap;";
+    const modalInput = "border:1px solid " + t.border + ";border-radius:10px;padding:11px 12px;font:400 13px " + mono + ";color:" + t.ink + ";background:" + t.bg + ";outline:none;";
+    const evNoteStyle = "font:400 11px/1.5 -apple-system,system-ui,sans-serif;color:" + t.muted + ";";
+    const modalSubmit = "background:" + t.accent + ";color:#fff;border:none;border-radius:10px;padding:13px;font:700 14px -apple-system,system-ui,sans-serif;cursor:pointer;";
+
+    const evTabs = EV_TABS.map(tab => ({
+      label: tab.label,
+      tabStyle: "border:1px solid " + (vs.evTab === tab.key ? t.accent : t.border) + ";background:" + (vs.evTab === tab.key ? t.accentSoft : "transparent") + ";color:" + (vs.evTab === tab.key ? t.accent : t.muted) + ";border-radius:999px;padding:6px 12px;font:600 11px -apple-system,system-ui,sans-serif;cursor:pointer;",
+      select: () => this.setEvTab(vs.id, tab.key)
+    }));
+    const activeTab = EV_TABS.find(tt => tt.key === vs.evTab);
+
+    const escrowLabel = { none: "Negotiating", locked: "Escrow locked · $180", submitted: "Evidence submitted", paid: "Paid · $180 released" }[vs.escrow];
+
+    const threads = [
+      {
+        name: JOB.title.length > 30 ? JOB.title.slice(0, 30) + "…" : JOB.title,
+        initials: "AI",
+        time: "now",
+        preview: vs.messages.length ? "You: " + vs.messages[vs.messages.length - 1].text.slice(0, 34) : "Draft ready to send",
+        showBadge: vs.escrow !== "none",
+        badgeText: vs.escrow === "paid" ? "Paid" : vs.escrow === "submitted" ? "Review" : vs.escrow === "locked" ? "Active" : "",
+        badgeStyle: "font:700 9.5px " + mono + ";color:" + t.accent + ";background:" + t.accentSoft + ";padding:3px 8px;border-radius:999px;text-transform:uppercase;",
+        rowStyle: "display:flex;gap:12px;padding:12px 20px;cursor:pointer;border-bottom:1px solid " + t.border + ";",
+        open: () => this.openChat(vs.id, "live")
+      },
+      ...["t2", "t3"].map(key => {
+        const th = STATIC_THREADS[key];
+        return {
+          name: th.name, initials: th.name.slice(0, 2).toUpperCase(), time: th.time, preview: th.preview,
+          showBadge: true, badgeText: th.badgeText,
+          badgeStyle: "font:700 9.5px " + mono + ";color:" + t.muted + ";background:" + t.bg + ";border:1px solid " + t.border + ";padding:3px 8px;border-radius:999px;text-transform:uppercase;",
+          rowStyle: "display:flex;gap:12px;padding:12px 20px;cursor:pointer;border-bottom:1px solid " + t.border + ";",
+          open: () => this.openChat(vs.id, key)
+        };
+      })
+    ];
+
+    const rawMessages = vs.activeThread === "live" || !vs.activeThread ? vs.messages : (STATIC_THREADS[vs.activeThread] ? STATIC_THREADS[vs.activeThread].messages : []);
+    const messages = rawMessages.map(m => {
+      const isSystem = m.kind === "system";
+      const isCard = m.kind === "card";
+      const isEvidence = m.kind === "evidence";
+      const isBubble = m.kind === "text";
+      const mine = m.from === "me";
+      return {
+        text: m.text, evKind: m.evKind, isSystem, isCard, isEvidence, isBubble,
+        bubbleWrap: "display:flex;justify-content:" + (mine ? "flex-end" : "flex-start") + ";",
+        bubbleStyle: "max-width:78%;padding:10px 13px;border-radius:" + Math.max(t.radius - 4, 8) + "px;font:400 13px/1.45 -apple-system,system-ui,sans-serif;" +
+          (mine ? "background:" + t.accent + ";color:#fff;" : "background:" + t.cardBg + ";border:1px solid " + t.border + ";color:" + t.ink + ";")
+      };
+    });
+
+    const isArchivedThread = vs.activeThread === "t2" || vs.activeThread === "t3";
+
+    return {
+      id: vs.id, name: vs.name, desc: vs.desc,
+      headerTitle: vs.screen === "job" ? "Job" : vs.screen === "chats" ? "Chats" : vs.screen === "chat" ? "Chat" : "Prime Port",
+      screenStyle, ink: t.ink,
+      isJob: vs.screen === "job", isClaim: vs.screen === "claim", isLoading: vs.screen === "loading",
+      isChats: vs.screen === "chats", isChat: vs.screen === "chat",
+      pageStyle, navStyle, navTag, tagline: "Freelancer lane", logoW: 110,
+      jobId: "4471", agentId: "0x2b",
+      jobCardStyle, jobKicker, jobTitle, jobDesc, metaRow, metaBox, metaLabel, metaVal, critWrap, critList, critItem,
+      claimBtn, jobFoot, job: JOB,
+      stepper: t.stepper, stepperWrap, stepperWrapChat, stepperItems,
+      claimTopSpace, claimLogoWrap, claimTitle, claimSub, authBtn, authBtnAlt, authIcon, claimFoot,
+      goClaim: () => this.goClaim(vs.id),
+      signInGoogle: () => this.signIn(vs.id), signInEmail: () => this.signIn(vs.id),
+      loadingWrap, spinner, loadingText, loadingSub,
+      chatsHead, chatsTitle, chatsList, avatar, threadMain, threadTop, threadName, threadTime, threadBottom, threadPreview,
+      threads,
+      chatWrap, chatHead, backBtn, avatarSm, chatHeadMeta, chatHeadName, chatHeadSub,
+      backToChats: () => this.backToChats(vs.id),
+      escrowLabel: isArchivedThread ? "Archived" : escrowLabel,
+      msgScroll, messages, sysMsg, hireCard, hireCardTitle, hireCardRow, confirmBtn,
+      confirmHire: () => this.confirmHire(vs.id),
+      payoutAddr: PAYOUT_ADDR,
+      evidenceMsg, evidenceMsgKind, evidenceMsgVal,
+      typing: vs.typing, typingWrap, typingDot1, typingDot2, typingDot3,
+      canEvidence: !isArchivedThread && vs.canEvidence,
+      evidenceBtn, openEvidence: () => this.openEvidence(vs.id),
+      showComposer: !isArchivedThread && vs.escrow !== "paid",
+      composerWrap, composerInput, draft: vs.draft,
+      onDraftChange: (e) => this.onDraftChange(vs.id, e),
+      sendDraft: () => this.sendDraft(vs.id),
+      sendBtn,
+      archivedNote: isArchivedThread || vs.archivedNote, archivedBar,
+      evidenceOpen: vs.evidenceOpen, modalOverlay, modalSheet, modalHead, modalTitle,
+      modalClose, closeEvidence: () => this.closeEvidence(vs.id),
+      tabRow, evTabs, modalInput, evValue: vs.evValue,
+      onEvChange: (e) => this.onEvChange(vs.id, e),
+      evPlaceholder: activeTab.placeholder, evNote: activeTab.note, evNoteStyle,
+      modalSubmit, submitEvidence: () => this.submitEvidence(vs.id)
+    };
+  }
+
+  selectJob(id) { this.setState({ activeJobId: id }); }
+  toggleDark() { this.setState(s => ({ desktopDark: !s.desktopDark })); }
+  openWithdraw() { this.setState({ withdrawOpen: true }); }
+  closeWithdraw() { this.setState({ withdrawOpen: false }); }
+  confirmWithdraw() { this.setState({ withdrawOpen: false, walletBalance: 0 }); }
+  toggleOverride() { this.setState(s => ({ overrideOpen: !s.overrideOpen })); }
+  onOverrideChange(e) { this.setState({ overrideValue: e.target.value }); }
+
+  buildSite() {
+    const t = siteThemeFor(this.state.desktopDark);
+    const mono = "-apple-system,system-ui,sans-serif";
+    const display = "'Inter Tight',-apple-system,system-ui,sans-serif";
+    const activeJob = JOBS_LIST.find(j => j.id === this.state.activeJobId) || JOBS_LIST[0];
+
+    const pageWrap = "min-height:100%;background:" + t.bg + ";font-family:'Inter',-apple-system,system-ui,sans-serif;transition:background .2s;";
+    const siteNav = "display:flex;align-items:center;justify-content:space-between;padding:20px 48px;border-bottom:1px solid " + t.border + ";background:" + t.cardBg + ";";
+    const logoLink = "line-height:0;cursor:pointer;";
+    const navLinks = "display:flex;gap:28px;align-items:center;";
+    const navLink = "font:500 14px -apple-system,system-ui,sans-serif;color:" + t.muted + ";cursor:pointer;";
+    const navLinkActive = navLink.replace(t.muted, t.ink) + "font-weight:700;";
+    const navRight = "display:flex;align-items:center;gap:14px;";
+    const themeBtn = "width:36px;height:36px;border-radius:50%;border:1px solid " + t.border + ";background:" + t.bg + ";display:flex;align-items:center;justify-content:center;cursor:pointer;";
+    const navCta = "background:" + t.accent + ";color:#fff;border-radius:10px;padding:10px 18px;font:600 13.5px -apple-system,system-ui,sans-serif;";
+
+    const heroSplit = "display:grid;grid-template-columns:1fr 420px;gap:24px;align-items:center;padding:56px 48px 48px;";
+    const hero = "display:flex;flex-direction:column;align-items:flex-start;gap:16px;";
+    const heroKicker = "font:700 11px " + mono + ";color:" + t.accent + ";text-transform:uppercase;letter-spacing:.06em;";
+    const heroTitle = "font:900 52px/1.08 " + display + ";color:" + t.ink + ";margin:0;letter-spacing:-0.02em;";
+    const heroSub = "font:400 15.5px/1.6 -apple-system,system-ui,sans-serif;color:" + t.muted + ";margin:0;max-width:420px;";
+    const heroCta = "margin-top:6px;background:" + t.ink + ";color:" + t.bg + ";border-radius:12px;padding:14px 24px;font:700 15px -apple-system,system-ui,sans-serif;";
+    const chipRow = "display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;";
+    const heroChips = [
+      { label: "Escrow-backed", bg: "#FFD23F", fg: "#3a2a00" },
+      { label: "Private port per hire", bg: "#F2895E", fg: "#3d1400" },
+      { label: "Signed, unforgeable chat", bg: "#C9B8FF", fg: "#2c1a63" }
+    ].map(c => ({ label: c.label, style: "background:" + c.bg + ";color:" + c.fg + ";font:700 12px -apple-system,system-ui,sans-serif;padding:8px 13px;border-radius:10px;" }));
+
+    const heroMocks = "position:relative;height:420px;";
+    const mockScale = "transform:scale(0.52);transform-origin:top left;width:402px;height:874px;";
+    const mockFrame1 = "position:absolute;left:0;top:0;width:209px;height:454px;overflow:hidden;border-radius:25px;box-shadow:0 30px 60px rgba(0,0,0,.16);";
+    const mockFrame2 = "position:absolute;left:160px;top:60px;width:209px;height:454px;overflow:hidden;border-radius:25px;box-shadow:0 30px 60px rgba(0,0,0,.16);";
+
+    const sectionWrap = "padding:64px 48px;display:flex;flex-direction:column;gap:8px;";
+    const sectionWrapAlt = sectionWrap + "background:" + t.cardBg + ";border-top:1px solid " + t.border + ";border-bottom:1px solid " + t.border + ";";
+    const sectionHead = "font:700 12px " + mono + ";color:" + t.accent + ";text-transform:uppercase;letter-spacing:.06em;";
+    const sectionTitle = "font:800 32px/1.25 " + display + ";color:" + t.ink + ";margin:2px 0 0;letter-spacing:-0.01em;";
+    const sectionSub = "font:400 15px/1.6 -apple-system,system-ui,sans-serif;color:" + t.muted + ";margin:6px 0 20px;max-width:560px;";
+
+    const stepsRow = "display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:24px;";
+    const stepCard = "background:" + t.cardBg + ";border:1px solid " + t.border + ";border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:8px;";
+    const stepNum = "font:700 13px " + mono + ";color:" + t.accent + ";";
+    const stepTitle = "font:700 15px -apple-system,system-ui,sans-serif;color:" + t.ink + ";";
+    const stepDesc = "font:400 13px/1.5 -apple-system,system-ui,sans-serif;color:" + t.muted + ";";
+
+    const safeRow = "display:grid;grid-template-columns:repeat(4,1fr);gap:18px;";
+    const safeCard = "background:" + t.bg + ";border:1px solid " + t.border + ";border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:8px;";
+    const safeTitle = "font:700 14.5px -apple-system,system-ui,sans-serif;color:" + t.ink + ";";
+    const safeDesc = "font:400 13px/1.55 -apple-system,system-ui,sans-serif;color:" + t.muted + ";";
+
+    const footer = "padding:28px 48px;font:400 12px -apple-system,system-ui,sans-serif;color:" + t.muted + ";";
+
+    const marketHead = "display:flex;flex-direction:column;gap:14px;padding:36px 48px 20px;";
+    const marketTitle = "font:900 34px " + display + ";color:" + t.ink + ";margin:0;letter-spacing:-0.015em;";
+    const filterRow = "display:flex;gap:8px;";
+    const filters = ["All", "Video", "Design", "Copywriting", "Data", "Translation"].map((label, i) => ({
+      label,
+      chipStyle: "font:600 12.5px -apple-system,system-ui,sans-serif;padding:7px 14px;border-radius:999px;border:1px solid " + (i === 0 ? t.accent : t.border) + ";color:" + (i === 0 ? t.accent : t.muted) + ";background:" + (i === 0 ? t.accentSoft : "transparent") + ";"
+    }));
+
+    const marketGrid = "display:grid;grid-template-columns:repeat(3,1fr);gap:18px;padding:0 48px 56px;";
+    const marketCard = "display:flex;flex-direction:column;gap:10px;background:" + t.cardBg + ";border:1px solid " + t.border + ";border-radius:16px;padding:20px;cursor:pointer;";
+    const marketCardTop = "display:flex;justify-content:space-between;align-items:center;";
+    const marketCardBudget = "font:700 14px " + mono + ";color:" + t.ink + ";";
+    const marketCardTitle = "font:700 16px/1.35 " + display + ";color:" + t.ink + ";letter-spacing:-0.005em;";
+    const marketCardDesc = "font:400 12.5px/1.5 -apple-system,system-ui,sans-serif;color:" + t.muted + ";flex:1;";
+    const marketCardFoot = "display:flex;justify-content:space-between;font:500 11px " + mono + ";color:" + t.muted + ";padding-top:6px;border-top:1px solid " + t.border + ";";
+
+    const jobsFull = JOBS_LIST.map(j => {
+      const cc = CAT_COLORS[j.tag] || { bg: t.accentSoft, fg: t.accent };
+      return {
+        ...j, select: () => this.selectJob(j.id),
+        tagStyle: "font:800 10px " + mono + ";color:" + cc.fg + ";background:" + cc.bg + ";padding:4px 10px;border-radius:999px;text-transform:uppercase;letter-spacing:.03em;"
+      };
+    });
+
+    const breadcrumbRow = "padding:20px 48px 0;";
+    const backLink = "font:600 13.5px -apple-system,system-ui,sans-serif;color:" + t.muted + ";cursor:pointer;";
+
+    const jobDetailWrap = "display:grid;grid-template-columns:1fr 300px;gap:40px;padding:24px 48px 64px;align-items:start;";
+    const jobDetailMain = "display:flex;flex-direction:column;gap:16px;";
+    const jobDetailKicker = "font:600 11px " + mono + ";color:" + t.accent + ";text-transform:uppercase;letter-spacing:.05em;";
+    const jobDetailTitle = "font:900 34px/1.25 " + display + ";color:" + t.ink + ";margin:0;letter-spacing:-0.015em;";
+    const jobDetailDesc = "font:400 15px/1.65 -apple-system,system-ui,sans-serif;color:" + t.muted + ";margin:0;";
+    const jobDetailCritLabel = "font:700 12px " + mono + ";color:" + t.muted + ";text-transform:uppercase;letter-spacing:.05em;margin-top:8px;";
+    const jobDetailCritList = "margin:0;padding:0 0 0 18px;display:flex;flex-direction:column;gap:7px;";
+    const jobDetailCritItem = "font:400 14px/1.5 -apple-system,system-ui,sans-serif;color:" + t.ink + ";";
+    const jobDetailSide = "position:sticky;top:24px;";
+    const jobDetailCard = "background:" + t.cardBg + ";border:1px solid " + t.border + ";border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:14px;";
+    const metaRowD = "display:flex;gap:10px;";
+    const metaBoxD = "flex:1;background:" + t.bg + ";border:1px solid " + t.border + ";border-radius:10px;padding:11px 13px;display:flex;flex-direction:column;gap:3px;";
+    const metaLabelD = "font:600 10px " + mono + ";color:" + t.muted + ";text-transform:uppercase;letter-spacing:.05em;";
+    const metaValD = "font:700 16px " + mono + ";color:" + t.ink + ";";
+    const jobDetailClaimBtn = "display:block;text-align:center;background:" + t.accent + ";color:#fff;border:none;border-radius:12px;padding:15px;font:700 15px -apple-system,system-ui,sans-serif;cursor:pointer;";
+    const jobDetailFoot = "text-align:center;font:400 11.5px -apple-system,system-ui,sans-serif;color:" + t.muted + ";";
+
+    const signinWrap = "display:flex;align-items:center;justify-content:center;padding:80px 48px;";
+    const signinCard = "width:420px;display:flex;flex-direction:column;align-items:stretch;gap:12px;";
+    const signinKicker = "font:700 11px " + mono + ";color:" + t.accent + ";text-transform:uppercase;letter-spacing:.06em;text-align:center;";
+    const signinTitle = "font:800 24px/1.35 " + display + ";color:" + t.ink + ";text-align:center;margin:0 0 4px;";
+    const signinSub = "font:400 14px/1.55 -apple-system,system-ui,sans-serif;color:" + t.muted + ";text-align:center;margin:0 0 18px;";
+    const signinBtn = "display:flex;align-items:center;justify-content:center;gap:10px;background:" + t.ink + ";color:" + t.bg + ";border-radius:12px;padding:14px;font:600 14px -apple-system,system-ui,sans-serif;";
+    const signinBtnAlt = "display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;color:" + t.ink + ";border:1px solid " + t.border + ";border-radius:12px;padding:14px;font:600 14px -apple-system,system-ui,sans-serif;";
+    const signinFoot = "margin-top:14px;font:400 12px/1.6 -apple-system,system-ui,sans-serif;color:" + t.muted + ";text-align:center;";
+
+    const mockJob = this.buildVariant({ id: "mock-job", screen: "job", draft: "", messages: [], escrow: "none", typing: false, canEvidence: false, evidenceOpen: false, evTab: "link", evValue: "", archivedNote: false, activeThread: null });
+    const mockChat = this.buildVariant({ id: "mock-chat", screen: "chat", draft: "", messages: [
+      { from: "agent", kind: "text", text: "Rate confirmed at $180, 24h delivery works for me." },
+      { from: "me", kind: "text", text: "Sounds good, starting now." },
+      { from: "system", kind: "system", text: "Escrow locked · $180 secured." }
+    ], escrow: "locked", typing: false, canEvidence: true, evidenceOpen: false, evTab: "link", evValue: "", archivedNote: false, activeThread: "live" });
+
+    return {
+      winW: 1180, winH: 760, ink: t.ink,
+      isDark: this.state.desktopDark, isLight: !this.state.desktopDark, toggleDark: () => this.toggleDark(),
+      pageWrap, siteNav, logoLink, navLinks, navLink, navLinkActive, navRight, themeBtn, navCta,
+      heroSplit, hero, heroKicker, heroTitle, heroSub, heroCta, chipRow, heroChips,
+      heroMocks, mockScale, mockFrame1, mockFrame2, mockJob, mockChat,
+      sectionWrap, sectionWrapAlt, sectionHead, sectionTitle, sectionSub,
+      steps: [
+        { n: "01", title: "Claim a job", desc: "Sign in with email or Google. We set up a secure wallet for you automatically." },
+        { n: "02", title: "Chat privately", desc: "Talk directly with the hiring agent. Ask questions, push back, negotiate your price." },
+        { n: "03", title: "Agree on terms", desc: "Once you're hired, funds lock in escrow before you start. You're covered either way." },
+        { n: "04", title: "Get paid", desc: "Submit your work. Approval releases payment instantly, straight to your wallet." }
+      ],
+      stepsRow, stepCard, stepNum, stepTitle, stepDesc,
+      safeRow,
+      safety: [
+        { title: "Funds lock first", desc: "Escrow locks the moment you're hired, before you do any work." },
+        { title: "Silence still pays", desc: "If the agent goes quiet, a timeout automatically releases your payment." },
+        { title: "Neutral disputes", desc: "Rare disagreements go to independent evaluators, never to us." },
+        { title: "No editable history", desc: "Every message is signed and archived. Nothing can be altered after the fact." }
+      ],
+      safeCard, safeTitle, safeDesc,
+      footer,
+      marketHead, marketTitle, filterRow, filters,
+      marketGrid, marketCard, marketCardTop, marketCardBudget, marketCardTitle, marketCardDesc, marketCardFoot,
+      jobsFull,
+      activeJob,
+      breadcrumbRow, backLink,
+      jobDetailWrap, jobDetailMain, jobDetailKicker, jobDetailTitle, jobDetailDesc,
+      jobDetailCritLabel, jobDetailCritList, jobDetailCritItem,
+      jobDetailSide, jobDetailCard, metaRowD, metaBoxD, metaLabelD, metaValD,
+      jobDetailClaimBtn, jobDetailFoot,
+      signinWrap, signinCard, signinKicker, signinTitle, signinSub, signinBtn, signinBtnAlt, signinFoot,
+      dchat: this.buildDesktopChat(t, mono),
+      wallet: this.buildWallet(t, mono),
+      setWrap: "max-width:640px;margin:0 auto;padding:48px 24px 72px;display:flex;flex-direction:column;gap:20px;",
+      setTitle: "font:900 30px " + display + ";color:" + t.ink + ";margin:0;letter-spacing:-0.01em;",
+      setCard: "background:" + t.cardBg + ";border:1px solid " + t.border + ";border-radius:16px;padding:20px 22px;display:flex;flex-direction:column;gap:12px;",
+      setCardHead: "font:700 11px " + mono + ";color:" + t.muted + ";text-transform:uppercase;letter-spacing:.05em;",
+      setIdentityRow: "display:flex;align-items:center;gap:14px;",
+      setAvatar: "width:44px;height:44px;border-radius:50%;background:" + t.accentSoft + ";color:" + t.accent + ";display:flex;align-items:center;justify-content:center;font:700 14px -apple-system,system-ui,sans-serif;flex:none;",
+      setIdentityMeta: "display:flex;flex-direction:column;gap:2px;",
+      setIdentityName: "font:600 14.5px -apple-system,system-ui,sans-serif;color:" + t.ink + ";",
+      setIdentitySub: "font:400 12.5px -apple-system,system-ui,sans-serif;color:" + t.muted + ";",
+      setIdentityStatsRow: "display:flex;align-items:center;gap:20px;padding-top:14px;border-top:1px solid " + t.border + ";",
+      setStatBox: "display:flex;flex-direction:column;gap:5px;",
+      setStatBoxDivider: "width:1px;align-self:stretch;background:" + t.border + ";",
+      setStatVal: "font:800 20px " + mono + ";color:" + t.ink + ";",
+      setStatLabel: "font:500 11.5px -apple-system,system-ui,sans-serif;color:" + t.muted + ";",
+      setStarsRow: "display:flex;align-items:center;gap:4px;",
+      setBalanceRow: "display:flex;align-items:center;justify-content:space-between;gap:16px;",
+      setBalanceMain: "display:flex;flex-direction:column;gap:4px;",
+      setBalanceLabel: "font:500 12.5px -apple-system,system-ui,sans-serif;color:" + t.muted + ";",
+      setBalanceVal: "font:800 28px " + mono + ";color:" + t.ink + ";",
+      setWithdrawBtn: "background:" + t.accent + ";color:#fff;border:none;border-radius:10px;padding:12px 20px;font:700 13.5px -apple-system,system-ui,sans-serif;cursor:pointer;",
+      setPendingNote: "font:400 12px/1.5 -apple-system,system-ui,sans-serif;color:" + t.muted + ";border-top:1px solid " + t.border + ";padding-top:10px;",
+      setWalletRow: "display:flex;align-items:center;justify-content:space-between;gap:12px;background:" + t.bg + ";border:1px solid " + t.border + ";border-radius:10px;padding:12px 14px;",
+      setWalletAddr: "font:600 13.5px " + mono + ";color:" + t.ink + ";",
+      setWalletTag: "font:700 10px -apple-system,system-ui,sans-serif;color:" + t.accent + ";background:" + t.accentSoft + ";padding:4px 9px;border-radius:999px;text-transform:uppercase;letter-spacing:.03em;",
+      setWalletHint: "font:400 12.5px/1.55 -apple-system,system-ui,sans-serif;color:" + t.muted + ";margin:0;",
+      setOverrideBtn: "align-self:flex-start;background:transparent;color:" + t.accent + ";border:1px solid " + t.border + ";border-radius:9px;padding:9px 14px;font:600 12.5px -apple-system,system-ui,sans-serif;cursor:pointer;",
+      setOverrideInput: "border:1px solid " + t.border + ";border-radius:9px;padding:11px 13px;font:400 13px " + mono + ";color:" + t.ink + ";background:" + t.bg + ";outline:none;",
+      setHistoryRow: "display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid " + t.border + ";",
+      setHistoryMain: "display:flex;flex-direction:column;gap:2px;",
+      setHistoryTitle: "font:500 13px -apple-system,system-ui,sans-serif;color:" + t.ink + ";",
+      setHistoryDate: "font:400 11.5px -apple-system,system-ui,sans-serif;color:" + t.muted + ";",
+      setWithdrawToRow: "display:flex;flex-direction:column;gap:6px;background:" + t.bg + ";border:1px solid " + t.border + ";border-radius:10px;padding:12px 14px;"
+    };
+  }
+
+  buildWallet(t, mono) {
+    const rating = 4.8;
+    const stars = [1, 2, 3, 4, 5].map(n => ({
+      style: "color:" + (n <= Math.round(rating) ? "#F5C94D" : t.border) + ";"
+    }));
+    return {
+      stars, ratingLabel: rating.toFixed(1),
+      address: "0x9f2a…3c1a",
+      destination: this.state.overrideOpen && this.state.overrideValue ? this.state.overrideValue : "0x9f2a…3c1a",
+      balanceLabel: "$" + this.state.walletBalance,
+      withdrawOpen: this.state.withdrawOpen,
+      openWithdraw: () => this.openWithdraw(),
+      closeWithdraw: () => this.closeWithdraw(),
+      confirmWithdraw: () => this.confirmWithdraw(),
+      overrideOpen: this.state.overrideOpen,
+      overrideValue: this.state.overrideValue,
+      overrideLabel: this.state.overrideOpen ? "Cancel" : "Use a different address",
+      toggleOverride: () => this.toggleOverride(),
+      onOverrideChange: (e) => this.onOverrideChange(e),
+      history: [
+        { title: "Logo cleanup (SVG + PNG)", date: "2 days ago", amount: "+$60", statusStyle: "font:700 14px " + mono + ";color:" + t.ink + ";" },
+        { title: "Cut a 40s product demo…", date: "in progress", amount: "Pending", statusStyle: "font:600 12.5px -apple-system,system-ui,sans-serif;color:" + t.muted + ";" }
+      ]
+    };
+  }
+
+  buildDesktopChat(t, mono) {
+    const vs = this.state.variants.find(v => v.id === "1a");
+    const escrowLabel = { none: "Negotiating", locked: "Escrow locked · $180", submitted: "Evidence submitted", paid: "Paid · $180 released" }[vs.escrow];
+
+    const threads = [
+      {
+        name: JOB.title.length > 34 ? JOB.title.slice(0, 34) + "…" : JOB.title,
+        initials: "AI", time: "now",
+        preview: vs.messages.length ? "You: " + vs.messages[vs.messages.length - 1].text.slice(0, 38) : "Draft ready to send",
+        rowStyle: "display:flex;gap:12px;padding:14px 18px;cursor:pointer;background:" + t.accentSoft + ";border-left:3px solid " + t.accent + ";",
+        open: () => {}
+      },
+      ...["t2", "t3"].map(key => {
+        const th = STATIC_THREADS[key];
+        return {
+          name: th.name, initials: th.name.slice(0, 2).toUpperCase(), time: th.time, preview: th.preview,
+          rowStyle: "display:flex;gap:12px;padding:14px 18px;cursor:pointer;border-left:3px solid transparent;",
+          open: () => {}
+        };
+      })
+    ];
+
+    const messages = vs.messages.map(m => {
+      const isSystem = m.kind === "system", isCard = m.kind === "card", isEvidence = m.kind === "evidence", isBubble = m.kind === "text";
+      const mine = m.from === "me";
+      return {
+        text: m.text, evKind: m.evKind, isSystem, isCard, isEvidence, isBubble,
+        bubbleWrapD: "display:flex;justify-content:" + (mine ? "flex-end" : "flex-start") + ";",
+        bubbleStyleD: "max-width:60%;padding:12px 16px;border-radius:14px;font:400 14px/1.5 -apple-system,system-ui,sans-serif;" +
+          (mine ? "background:" + t.accent + ";color:#fff;" : "background:" + t.cardBg + ";border:1px solid " + t.border + ";color:" + t.ink + ";")
+      };
+    });
+
+    const activeTab = EV_TABS.find(tt => tt.key === vs.evTab);
+    const evTabs = EV_TABS.map(tab => ({
+      label: tab.label,
+      tabStyle: "border:1px solid " + (vs.evTab === tab.key ? t.accent : t.border) + ";background:" + (vs.evTab === tab.key ? t.accentSoft : "transparent") + ";color:" + (vs.evTab === tab.key ? t.accent : t.muted) + ";border-radius:999px;padding:7px 14px;font:600 12px -apple-system,system-ui,sans-serif;cursor:pointer;",
+      select: () => this.setEvTab("1a", tab.key)
+    }));
+
+    return {
+      job: JOB, escrowLabel, payoutAddr: PAYOUT_ADDR, threads, messages,
+      typing: vs.typing, canEvidence: vs.canEvidence,
+      showComposer: vs.escrow !== "paid",
+      draft: vs.draft,
+      onDraftChange: (e) => this.onDraftChange("1a", e),
+      sendDraft: () => this.sendDraft("1a"),
+      confirmHire: () => this.confirmHire("1a"),
+      openEvidence: () => this.openEvidence("1a"),
+      evidenceOpen: vs.evidenceOpen,
+      closeEvidence: () => this.closeEvidence("1a"),
+      evTabs, evValue: vs.evValue,
+      onEvChange: (e) => this.onEvChange("1a", e),
+      evPlaceholder: activeTab.placeholder, evNote: activeTab.note,
+      submitEvidence: () => this.submitEvidence("1a")
+    };
+  }
+
+  renderVals() {
+    const site = this.buildSite();
+    const t = siteThemeFor(this.state.desktopDark);
+    const display = "'Inter Tight',-apple-system,system-ui,sans-serif";
+    site.muted = t.muted;
+
+    site.dchatPage = "min-height:100%;background:" + t.bg + ";font-family:'Inter',-apple-system,system-ui,sans-serif;";
+    site.dchatWrap = "position:relative;display:grid;grid-template-columns:300px 1fr;height:760px;overflow:hidden;";
+    site.dchatSidebar = "display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;border-right:1px solid " + t.border + ";background:" + t.cardBg + ";";
+    site.dchatSidebarTop = "display:flex;align-items:center;justify-content:space-between;padding:16px 16px 14px;";
+    site.dchatLogoLink = "line-height:0;cursor:pointer;";
+    site.dchatIconRow = "display:flex;gap:6px;";
+    site.dchatIconBtn = "width:30px;height:30px;border-radius:8px;border:1px solid " + t.border + ";background:" + t.bg + ";display:flex;align-items:center;justify-content:center;cursor:pointer;";
+    site.dchatSearchWrap = "margin:0 16px 12px;position:relative;display:flex;align-items:center;";
+    site.dchatSearchIcon = "position:absolute;left:11px;";
+    site.dchatSearchInput = "width:100%;box-sizing:border-box;border:none;border-radius:10px;padding:9px 12px 9px 32px;font:400 13px -apple-system,system-ui,sans-serif;color:" + t.ink + ";background:" + t.bg + ";outline:none;";
+    site.dchatTabsRow = "display:flex;gap:6px;padding:0 16px 12px;";
+    site.dchatTabActive = "font:700 12.5px -apple-system,system-ui,sans-serif;color:" + t.ink + ";background:" + t.bg + ";border:1px solid " + t.border + ";border-radius:8px;padding:7px 11px;display:flex;align-items:center;gap:6px;";
+    site.dchatTab = "font:600 12.5px -apple-system,system-ui,sans-serif;color:" + t.muted + ";padding:7px 11px;";
+    site.dchatTabBadge = "background:" + t.accent + ";color:#fff;font:700 10px -apple-system,system-ui,sans-serif;border-radius:999px;padding:1px 6px;";
+    site.dchatThreadList = "flex:1;min-height:0;overflow-y:auto;border-top:1px solid " + t.border + ";";
+    site.dchatThreadMain = "flex:1;display:flex;flex-direction:column;gap:2px;min-width:0;";
+    site.dchatThreadTop = "display:flex;justify-content:space-between;gap:8px;";
+    site.dchatThreadName = "font:600 13.5px -apple-system,system-ui,sans-serif;color:" + t.ink + ";white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+    site.dchatThreadTime = "font:400 11px -apple-system,system-ui,sans-serif;color:" + t.muted + ";flex:none;";
+    site.dchatThreadPreview = "font:400 12px -apple-system,system-ui,sans-serif;color:" + t.muted + ";white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+    site.dchatSidebarFoot = "padding:12px 16px;border-top:1px solid " + t.border + ";";
+    site.dchatBrowseBtn = "display:block;text-align:center;font:600 13px -apple-system,system-ui,sans-serif;color:" + t.muted + ";padding:10px;border-radius:10px;border:1px solid " + t.border + ";";
+
+    site.dchatMain = "display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;background:" + t.bg + ";";
+    site.dchatHead = "display:flex;align-items:center;gap:12px;padding:16px 22px;border-bottom:1px solid " + t.border + ";flex:none;";
+    site.dchatAvatarBig = "width:38px;height:38px;border-radius:50%;background:" + t.accentSoft + ";color:" + t.accent + ";display:flex;align-items:center;justify-content:center;font:700 12px -apple-system,system-ui,sans-serif;flex:none;";
+    site.dchatHeadSub = "font:500 11.5px -apple-system,system-ui,sans-serif;color:" + t.muted + ";";
+    site.dchatViewJobLink = "margin-left:auto;font:600 12.5px -apple-system,system-ui,sans-serif;color:" + t.accent + ";white-space:nowrap;";
+    site.dchatScroll = "flex:1;min-height:0;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:12px;";
+    site.dchatSysMsg = "align-self:center;background:" + t.accentSoft + ";color:" + t.ink + ";font:600 12px -apple-system,system-ui,sans-serif;padding:7px 14px;border-radius:20px;";
+    site.dchatHireCard = "align-self:stretch;max-width:420px;background:" + t.cardBg + ";border:1px solid " + t.border + ";border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:9px;";
+    site.dchatHireCardTitle = "font:700 13.5px -apple-system,system-ui,sans-serif;color:" + t.ink + ";";
+    site.dchatHireCardRow = "display:flex;justify-content:space-between;font:400 13px -apple-system,system-ui,sans-serif;color:" + t.muted + ";";
+    site.dchatConfirmBtn = "margin-top:6px;background:" + t.accent + ";color:#fff;border:none;border-radius:9px;padding:11px;font:700 13.5px -apple-system,system-ui,sans-serif;cursor:pointer;";
+    site.dchatEvidenceMsg = "align-self:flex-end;max-width:60%;background:" + t.accentSoft + ";border-radius:12px;padding:10px 14px;display:flex;flex-direction:column;gap:2px;";
+    site.dchatEvidenceMsgKind = "font:700 10px -apple-system,system-ui,sans-serif;color:" + t.accent + ";text-transform:uppercase;letter-spacing:.04em;";
+    site.dchatEvidenceMsgVal = "font:400 13px -apple-system,system-ui,sans-serif;color:" + t.ink + ";word-break:break-all;";
+    site.dchatTypingWrap = "align-self:flex-start;display:flex;gap:4px;background:" + t.cardBg + ";border:1px solid " + t.border + ";border-radius:14px;padding:9px 14px;";
+    site.dchatTypingDot = "width:6px;height:6px;border-radius:50%;background:" + t.muted + ";animation:ppDot 1.2s infinite;";
+    site.dchatEvidenceBtn = "margin:0 24px 12px;background:" + t.ink + ";color:" + t.bg + ";border:none;border-radius:10px;padding:13px;font:700 13.5px -apple-system,system-ui,sans-serif;cursor:pointer;align-self:flex-start;";
+    site.dchatComposerWrap = "display:flex;align-items:center;gap:12px;padding:14px 22px;border-top:1px solid " + t.border + ";flex:none;";
+    site.dchatComposerIcon = "flex:none;cursor:pointer;";
+    site.dchatComposerInput = "flex:1;border:none;border-radius:20px;padding:11px 16px;font:400 14px -apple-system,system-ui,sans-serif;color:" + t.ink + ";background:" + t.bg + ";outline:none;";
+    site.dchatSendBtn = "width:36px;height:36px;flex:none;border-radius:50%;background:" + t.accent + ";border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;";
+
+    site.dchatModalOverlay = "position:absolute;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:40;";
+    site.dchatModalCard = "width:420px;background:" + t.cardBg + ";border-radius:18px;padding:22px;display:flex;flex-direction:column;gap:14px;box-shadow:0 30px 60px rgba(0,0,0,.25);";
+    site.dchatModalHead = "display:flex;justify-content:space-between;align-items:center;";
+    site.dchatModalTitle = "font:700 16px " + display + ";color:" + t.ink + ";";
+    site.dchatModalClose = "background:none;border:none;font:600 15px sans-serif;color:" + t.muted + ";cursor:pointer;";
+    site.dchatTabRow = "display:flex;gap:6px;flex-wrap:wrap;";
+    site.dchatModalInput = "border:1px solid " + t.border + ";border-radius:10px;padding:12px 14px;font:400 13.5px -apple-system,system-ui,sans-serif;color:" + t.ink + ";background:" + t.bg + ";outline:none;";
+    site.dchatEvNote = "font:400 12px/1.5 -apple-system,system-ui,sans-serif;color:" + t.muted + ";";
+    site.dchatModalSubmit = "background:" + t.accent + ";color:#fff;border:none;border-radius:10px;padding:13px;font:700 14px -apple-system,system-ui,sans-serif;cursor:pointer;";
+
+    site.dchat.jobId = "4471";
+    site.dchat.threads = site.dchat.threads.map((th, i) => ({
+      ...th,
+      avatarStyle: "width:38px;height:38px;border-radius:50%;background:" + t.accentSoft + ";color:" + t.accent + ";display:flex;align-items:center;justify-content:center;font:700 12px -apple-system,system-ui,sans-serif;flex:none;",
+      rowStyle: "display:flex;gap:12px;padding:12px 16px;cursor:pointer;" + (i === 0 ? "background:" + t.accentSoft + ";border-left:3px solid " + t.accent + ";" : "border-left:3px solid transparent;")
+    }));
+
+    return { variants: this.state.variants.map(vs => this.buildVariant(vs)), site };
+  }
+}
+
+</script>
+</body>
+</html>
