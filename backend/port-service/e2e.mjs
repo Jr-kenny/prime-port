@@ -5,6 +5,7 @@
 // transcript hash reproduces from its own entries.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { Client, IdentifierKind } from "@xmtp/node-sdk";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { toBytes } from "viem";
@@ -100,7 +101,7 @@ const status = await api("GET", `/ports/${jobId}`);
 ok("status is scrapped and grant token withheld", status.status === "scrapped" && !status.grantToken);
 
 // archive integrity: hash reproduces from entries, and entries match plaintext
-const archivePath = new URL(`./data/archive/${jobId}.json`, import.meta.url).pathname;
+const archivePath = fileURLToPath(new URL(`./data/archive/${jobId}.json`, import.meta.url));
 const arch = JSON.parse(readFileSync(archivePath, "utf8"));
 const convo = arch.conversations[0];
 ok("archive hash reproduces from its own entries", transcriptHash(convo.entries) === convo.transcriptHash);

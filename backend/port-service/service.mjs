@@ -9,6 +9,7 @@
 import { createServer } from "node:http";
 import { randomBytes, createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { Client, IdentifierKind } from "@xmtp/node-sdk";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { toBytes } from "viem";
@@ -16,7 +17,7 @@ import { transcriptHash } from "../commitment/commitment.mjs";
 
 const ENV = process.env.XMTP_ENV ?? "dev";
 const PORT = Number(process.env.PORT ?? 8791);
-const DATA = new URL("./data/", import.meta.url).pathname;
+const DATA = fileURLToPath(new URL("./data/", import.meta.url));
 const MAX_GRANT_SIGNATURES = 3; // one registration can ask for a couple of sigs
 const GRANT_WINDOW_MS = 10 * 60 * 1000;
 

@@ -13,6 +13,7 @@
 import { createServer } from "node:http";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
@@ -22,7 +23,7 @@ import { commitmentHash, signingMessage } from "../commitment/commitment.mjs";
 const PORT = Number(process.env.PORT ?? 8792);
 const PORT_SVC = process.env.PORT_SVC ?? "http://localhost:8791";
 const FEE_BPS = Number(process.env.FEE_BPS ?? 250);
-const DATA = new URL("./data/", import.meta.url).pathname;
+const DATA = fileURLToPath(new URL("./data/", import.meta.url));
 mkdirSync(DATA, { recursive: true });
 
 const jobsPath = `${DATA}jobs.json`;
