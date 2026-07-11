@@ -1,0 +1,6 @@
+{
+  "name": "@prime-port/marketplace-watcher",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": { "start": "node watcher.mjs", "once": "node watcher.mjs once" }
+}
