@@ -103,12 +103,30 @@ keys the port wallet approved. All three phases verified end to end:
   message, which rotates each group's epoch; after that the agent's send fails hard with
   "Group is inactive". **Scrap = revoke + flush, never revoke alone.**
 
+Two refinements from productionizing this in `backend/port-service` (the e2e found both):
+
+- **Flush ordering matters.** The closing send only commits the eviction if the sending client
+  builds the conversation's membership from identity state fetched AFTER the revocation. If the
+  service client already synced the conversation before revoking (say, to archive it), its send
+  reuses the cached membership and commits nothing, and the revoked agent keeps working. So
+  scrap is strictly: revoke first, then first-sync + archive + closing send.
+- **The lockout lands when the revoked client syncs.** MLS receivers tolerate a short window of
+  past epochs for out-of-order delivery, so a client that deliberately stops syncing can inject
+  a message or two right after the flush. This can't touch evidence: the archive is taken at
+  scrap, so nothing after the closing marker exists in any transcript, and our freelancer UI
+  treats post-"[port closed]" messages as void.
+
 **In plain English:** logging the agent's device out of the account works instantly on paper,
 but a conversation that device was already in keeps accepting its messages until another
 participant checks in and notices the logout. So when we close a port we don't just log the
 device out; our side immediately pings every conversation with a "[port closed]" message, which
-slams the door for real. We proved all of this against XMTP's live test network, including the
-freelancer seeing the agent's replies as coming from the port itself.
+slams the door for real. Two fine-print notes from building the real service: the door only
+slams if our side looks at the conversation with fresh eyes after the logout (so the service
+revokes first and syncs after), and a device that covers its ears and refuses to sync can shout
+one last thing through the closing door. That last shout can never matter, because the evidence
+record is sealed at closing time and anything after the closing marker is ignored. We proved all
+of this against XMTP's live test network, including the freelancer seeing the agent's replies as
+coming from the port itself.
 
 ## What's still open
 

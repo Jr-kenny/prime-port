@@ -1,0 +1,7 @@
+{
+  "name": "@prime-port/port-service",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": { "start": "node service.mjs", "e2e": "node e2e.mjs" },
+  "dependencies": { "@xmtp/node-sdk": "4.6.0", "viem": "2.48.4" }
+}
