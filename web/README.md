@@ -2,20 +2,24 @@
 
 Freelancer-facing app for browsing jobs, claiming private ports, and continuing job chats.
 
-This app is the issue #9 interface implementation: job board plus WhatsApp-style chat navigation.
-The chat is intentionally its own full-screen route, not a chat box embedded inside a job detail
-page.
+This app now reflects two frontend milestones:
+
+- issue #9: the freelancer web app flow, with job board plus WhatsApp-style chat navigation.
+- issue #14: the visual restyle, which makes the UI light, familiar, and closer to a trusted
+  job board plus desktop messenger.
 
 ## What This Covers
 
-- Premium standalone landing page at `/`.
+- Standalone landing page at `/` with the issue #14 light design language.
 - Freelancer dashboard at `/home`.
 - Open job board at `/jobs`.
 - Canonical job detail route at `/jobs/:jobId` for social deep links.
+- Sign-in screen at `/signin`.
+- Settings and identity screen at `/settings`.
 - Claim flow that posts to the real backend claim endpoint.
 - Claimed-port list at `/chats`.
-- Full-screen private chat route at `/chats/:jobId`.
-- Mobile-first dark command-interface design inspired by the project direction.
+- Full-screen private chat route at `/chats/:jobId`, with desktop split-pane chat layout.
+- Light, familiar UI: white cards, one accent color, dense browse cards, and WhatsApp-like chat.
 
 ## Integration Notes
 
@@ -33,6 +37,8 @@ page.
 | `/home` | Freelancer dashboard |
 | `/jobs` | Job board |
 | `/jobs/:jobId` | Direct job detail page |
+| `/signin` | Freelancer sign-in |
+| `/settings` | Identity, payouts, and payment history |
 | `/chats` | WhatsApp-style claimed-port list |
 | `/chats/:jobId` | Full-screen private port chat |
 

@@ -46,9 +46,9 @@ distribution/ social posting pipeline
 
 ## Web app
 
-The freelancer-facing web app lives in `web/`. This is the issue #9 interface implementation:
-a premium landing page, job board, per-job detail pages, claim flow, WhatsApp-style chat list,
-and full-screen chat route.
+The freelancer-facing web app lives in `web/`. It now covers the issue #9 flow and the issue #14
+visual direction: a light, familiar landing page, dense marketplace, plain-language job detail,
+sign-in flow, freelancer settings, chat inbox, and full-screen private chat route.
 
 Routes:
 
@@ -56,6 +56,8 @@ Routes:
 - `/home` — freelancer dashboard.
 - `/jobs` — open job board.
 - `/jobs/:jobId` — canonical direct job link for social distribution.
+- `/signin` — email / Google-style account entry with auto-created wallet.
+- `/settings` — freelancer identity, payout wallet, balance, and payment history.
 - `/chats` — claimed port list.
 - `/chats/:jobId` — full-screen private port chat.
 
