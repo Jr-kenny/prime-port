@@ -105,7 +105,52 @@ ok("freelancer countersignature verifies, job is hired", countersigned.hired);
 const approved = await call("approve", { jobId });
 ok("approve settles and archives", approved.settled && approved.archive.transcriptHashes.length === 1);
 
-// 6. events for the other lanes
+// 6. rate the freelancer: signed by the same wallet that signed the hire
+const rate = await call("rate", { jobId, stars: 4, note: "solid review, one revision round" });
+ok("rate builds a review whose hash matches reference impl", commitmentHash(rate.review) === rate.reviewHash);
+ok("review pins the hire commitment and the hired freelancer", rate.review.commitmentHash === hire.commitmentHash && rate.review.freelancer === fl.inboxId);
+
+const badRateSig = await mcp.callTool({
+  name: "confirm_rate",
+  arguments: { jobId, signature: await flAccount.signMessage({ message: rate.signThisExactly }) },
+});
+ok("confirm_rate rejects a signature from the wrong wallet", badRateSig.isError);
+
+const rated = await call("confirm_rate", { jobId, signature: await agentAccount.signMessage({ message: rate.signThisExactly }) });
+ok("agent's review signature verifies and lands", rated.ok && rated.review.stars === 4);
+
+const rateAgain = await mcp.callTool({ name: "rate", arguments: { jobId, stars: 1 } });
+ok("second rating on the same job is refused", rateAgain.isError);
+
+// 7. the profile shows the track record, same numbers over MCP and REST
+const profile = await call("freelancer_profile", { inboxId: fl.inboxId });
+ok(
+  "profile counts the completed job and the stars",
+  profile.jobsClaimed === 1 && profile.jobsHired === 1 && profile.jobsCompleted === 1 && profile.completionRate === 1 && profile.avgStars === 4 && profile.reviews.length === 1,
+);
+const restProfile = await rest("GET", `/freelancers/${fl.inboxId}/profile`);
+ok("REST profile matches the MCP tool", JSON.stringify(restProfile) === JSON.stringify(profile));
+
+// 8. a new job's offers carry the reputation inline, and an unsettled job can't be rated
+const pub2 = await call("publish", {
+  title: "Second job for the same freelancer",
+  criteria: "Anything.",
+  price: "10",
+  currency: "USDT",
+  deadline: Math.floor(Date.now() / 1000) + 86400,
+  agentId: "5021-client-demo",
+  agentWallet: agentAccount.address,
+});
+await rest("POST", `/jobs/${pub2.jobId}/claims`, { inboxId: fl.inboxId, wallet: flAccount.address, name: "Dai the reviewer" });
+const offers2 = await call("get_offers", { jobId: pub2.jobId });
+ok(
+  "get_offers shows the claimant's track record inline",
+  offers2.offers[0].reputation.jobsCompleted === 1 && offers2.offers[0].reputation.avgStars === 4,
+);
+const rateOpen = await mcp.callTool({ name: "rate", arguments: { jobId: pub2.jobId, stars: 5 } });
+ok("rating an unsettled job is refused", rateOpen.isError);
+
+// 9. events for the other lanes
 const events = readFileSync(new URL("./data/events.jsonl", import.meta.url), "utf8")
   .trim()
   .split("\n")
@@ -113,9 +158,11 @@ const events = readFileSync(new URL("./data/events.jsonl", import.meta.url), "ut
   .filter((e) => e.jobId === jobId);
 const types = events.map((e) => e.type);
 ok(
-  "event stream carries job-created, hire-committed, job-approved, port-scrapped",
-  ["job-created", "hire-committed", "job-approved", "port-scrapped"].every((t) => types.includes(t)),
+  "event stream carries job-created, hire-committed, job-approved, port-scrapped, freelancer-rated",
+  ["job-created", "hire-committed", "job-approved", "port-scrapped", "freelancer-rated"].every((t) => types.includes(t)),
 );
+const ratedEvt = events.find((e) => e.type === "freelancer-rated");
+ok("freelancer-rated event carries the stars and review hash", ratedEvt.stars === 4 && ratedEvt.reviewHash === rate.reviewHash);
 const hireEvt = events.find((e) => e.type === "hire-committed");
 ok(
   "hire-committed event carries the register-at-hire payload",

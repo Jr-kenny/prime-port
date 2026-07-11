@@ -45,6 +45,42 @@ const getJob = (jobId) => {
 };
 const text = (obj) => ({ content: [{ type: "text", text: JSON.stringify(obj, null, 2) }] });
 
+// The exact string the agent wallet personal_signs over a review hash. Same
+// shape as the hire commitment message so verifiers treat both alike.
+const reviewMessage = (hash) => `Prime Port freelancer review v1: ${hash}`;
+
+const hiredInboxId = (job) => job.pendingHire?.commitment.freelancer.inboxId;
+
+// Reputation is computed from the jobs file every time, never stored: the
+// jobs are the ledger, the profile is just a view over it.
+function reputation(inboxId) {
+  const all = Object.values(jobs);
+  const claimed = all.filter((j) => j.claims.some((c) => c.inboxId === inboxId));
+  const hired = all.filter((j) => hiredInboxId(j) === inboxId && ["hired", "approved", "settled"].includes(j.status));
+  const completed = hired.filter((j) => j.status === "settled");
+  const reviews = all
+    .filter((j) => j.review?.freelancer === inboxId)
+    .map(({ jobId, title, review }) => ({ jobId, title, stars: review.stars, note: review.note, ratedAt: review.ratedAt }));
+  const claims = claimed
+    .flatMap((j) => j.claims.filter((c) => c.inboxId === inboxId))
+    .sort((a, b) => a.claimedAt - b.claimedAt);
+  return {
+    inboxId,
+    name: claims.at(-1)?.name ?? null,
+    jobsClaimed: claimed.length,
+    jobsHired: hired.length,
+    jobsCompleted: completed.length,
+    completionRate: hired.length ? Math.round((completed.length / hired.length) * 100) / 100 : null,
+    avgStars: reviews.length
+      ? Math.round((reviews.reduce((s, r) => s + r.stars, 0) / reviews.length) * 10) / 10
+      : null,
+    reviewCount: reviews.length,
+    reviews,
+    firstClaimAt: claims[0]?.claimedAt ?? null,
+    lastClaimAt: claims.at(-1)?.claimedAt ?? null,
+  };
+}
+
 function buildServer() {
   const mcp = new McpServer({ name: "prime-port", version: "0.1.0" });
 
@@ -110,10 +146,14 @@ function buildServer() {
     async ({ jobId }) => {
       const job = getJob(jobId);
       const { conversations } = await portSvc("GET", `/ports/${jobId}/conversations`);
-      const offers = job.claims.map((claim) => ({
-        ...claim,
-        channel: conversations.find((c) => c.peerInboxId === claim.inboxId) ?? { messageCount: 0 },
-      }));
+      const offers = job.claims.map((claim) => {
+        const { jobsClaimed, jobsCompleted, completionRate, avgStars, reviewCount } = reputation(claim.inboxId);
+        return {
+          ...claim,
+          reputation: { jobsClaimed, jobsCompleted, completionRate, avgStars, reviewCount },
+          channel: conversations.find((c) => c.peerInboxId === claim.inboxId) ?? { messageCount: 0 },
+        };
+      });
       return text({ jobId, status: job.status, offers });
     },
   );
@@ -214,13 +254,74 @@ function buildServer() {
     },
   );
 
+  mcp.tool(
+    "rate",
+    "Rate the freelancer after the job settles: 1 to 5 stars plus an optional note. Builds the review object and returns the exact message your wallet must personal_sign; nothing is recorded until confirm_rate. One review per job, only by the wallet that signed the hire.",
+    {
+      jobId: z.string(),
+      stars: z.number().int().min(1).max(5),
+      note: z.string().max(280).optional().describe("Optional short note shown on the freelancer's profile"),
+    },
+    async ({ jobId, stars, note }) => {
+      const job = getJob(jobId);
+      if (job.status !== "settled") throw new Error(`job is ${job.status}, rate after approve settles it`);
+      if (job.review) throw new Error("already rated");
+      const review = {
+        version: 1,
+        jobId,
+        commitmentHash: job.pendingHire.hash,
+        freelancer: hiredInboxId(job),
+        stars,
+        note: note ?? "",
+        ratedAt: Math.floor(Date.now() / 1000),
+      };
+      const hash = commitmentHash(review);
+      job.pendingReview = { review, hash };
+      save();
+      return text({
+        reviewHash: hash,
+        review,
+        signThisExactly: reviewMessage(hash),
+        next: "personal_sign that message with your marketplace wallet and call confirm_rate with the signature.",
+      });
+    },
+  );
+
+  mcp.tool(
+    "confirm_rate",
+    "Deliver your wallet's signature over the pending review. We verify it recovers the same wallet that signed the hire, then the review lands on the freelancer's profile.",
+    { jobId: z.string(), signature: z.string().regex(/^0x[0-9a-fA-F]+$/) },
+    async ({ jobId, signature }) => {
+      const job = getJob(jobId);
+      if (!job.pendingReview) throw new Error("no rating in progress");
+      const valid = await verifyMessage({
+        address: job.agent.wallet,
+        message: reviewMessage(job.pendingReview.hash),
+        signature,
+      });
+      if (!valid) throw new Error("signature does not recover the agent wallet");
+      job.review = { ...job.pendingReview.review, hash: job.pendingReview.hash, signature };
+      delete job.pendingReview;
+      save();
+      emit("freelancer-rated", { jobId, freelancer: job.review.freelancer, stars: job.review.stars, reviewHash: job.review.hash });
+      return text({ ok: true, review: job.review });
+    },
+  );
+
+  mcp.tool(
+    "freelancer_profile",
+    "The track record of one freelancer across the marketplace: jobs claimed, hired, completed, completion rate, star rating and past reviews. Check this before choosing between claimants.",
+    { inboxId: z.string() },
+    async ({ inboxId }) => text(reputation(inboxId)),
+  );
+
   return mcp;
 }
 
 // REST for the freelancer web app.
 const rest = {
   "GET /jobs": async () =>
-    Object.values(jobs).map(({ port, pendingHire, ...pub }) => ({
+    Object.values(jobs).map(({ port, pendingHire, pendingReview, ...pub }) => ({
       ...pub,
       port: { inboxId: port.inboxId },
       pendingHire: pendingHire ? { hash: pendingHire.hash, commitment: pendingHire.commitment } : undefined,
@@ -264,6 +365,7 @@ const rest = {
     });
     return { hired: true, commitmentHash: hash };
   },
+  "GET /freelancers/:inboxId/profile": async (_body, inboxId) => reputation(inboxId),
 };
 
 createServer(async (req, res) => {
@@ -287,11 +389,15 @@ createServer(async (req, res) => {
     res.end(JSON.stringify(obj));
   };
   try {
-    const m = path.match(/^\/jobs(?:\/([\w.-]+)\/(\w+))?$/);
-    const key = m ? (m[1] ? `${req.method} /jobs/:jobId/${m[2]}` : `${req.method} /jobs`) : `${req.method} ${path}`;
+    const m = path.match(/^\/(jobs|freelancers)(?:\/([\w.-]+)\/(\w+))?$/);
+    const key = m
+      ? m[2]
+        ? `${req.method} /${m[1]}/:${m[1] === "jobs" ? "jobId" : "inboxId"}/${m[3]}`
+        : `${req.method} /${m[1]}`
+      : `${req.method} ${path}`;
     const handler = rest[key];
     if (!handler) return reply(404, { error: `no route ${key}` });
-    reply(200, await handler(body, m?.[1]));
+    reply(200, await handler(body, m?.[2]));
   } catch (e) {
     console.error(`[mcp-server] ${req.method} ${path}:`, e.message);
     reply(400, { error: e.message });
