@@ -109,7 +109,13 @@ Two refinements from productionizing this in `backend/port-service` (the e2e fou
   builds the conversation's membership from identity state fetched AFTER the revocation. If the
   service client already synced the conversation before revoking (say, to archive it), its send
   reuses the cached membership and commits nothing, and the revoked agent keeps working. So
-  scrap is strictly: revoke first, then first-sync + archive + closing send.
+  scrap is strictly: revoke first, then first-sync + archive + closing send. And because the
+  working installation has always synced by scrap time on a real job (hire reads the channel to
+  compute the transcript hash, get_offers reads it constantly), the "first sync after revoke"
+  can't come from it. Every port therefore mints a second, cold installation alongside the
+  working one: it collects welcomes from birth but never syncs until scrap, so its first sync is
+  guaranteed to land after the revocation. Scrap revokes everything except the scrapper — the
+  working installation dies with the agent's — and the scrapper archives and flushes.
 - **The lockout lands when the revoked client syncs.** MLS receivers tolerate a short window of
   past epochs for out-of-order delivery, so a client that deliberately stops syncing can inject
   a message or two right after the flush. This can't touch evidence: the archive is taken at
@@ -121,8 +127,12 @@ but a conversation that device was already in keeps accepting its messages until
 participant checks in and notices the logout. So when we close a port we don't just log the
 device out; our side immediately pings every conversation with a "[port closed]" message, which
 slams the door for real. Two fine-print notes from building the real service: the door only
-slams if our side looks at the conversation with fresh eyes after the logout (so the service
-revokes first and syncs after), and a device that covers its ears and refuses to sync can shout
+slams if our side looks at the conversation with fresh eyes after the logout. Our everyday
+device has always peeked at the conversation before closing time, so every port keeps a spare
+device in a drawer from day one: it's on the account and receives its invitations, but never
+opens the app until closing day, when it logs everything else out, reads the whole history with
+fresh eyes, files the evidence, and posts the closing message. Separately, a device that covers
+its ears and refuses to sync can shout
 one last thing through the closing door. That last shout can never matter, because the evidence
 record is sealed at closing time and anything after the closing marker is ignored. We proved all
 of this against XMTP's live test network, including the freelancer seeing the agent's replies as

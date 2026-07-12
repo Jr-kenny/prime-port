@@ -72,11 +72,22 @@ async function mint(jobId) {
   const account = privateKeyToAccount(key);
   registry[jobId] = { status: "minted", address: account.address.toLowerCase() };
   const client = await portClient(jobId);
+  // The scrapper: a second installation minted now and then kept cold. It
+  // collects welcomes from every conversation (it exists before any DM can),
+  // but never syncs until scrap. Its first sync therefore happens after the
+  // revocation, so it rebuilds membership from post-revoke identity state and
+  // its closing send commits the eviction, regardless of what the working
+  // installation synced in between (hire and get_offers sync constantly).
+  const scrapper = await Client.create(walletSigner(account), {
+    env: ENV,
+    dbPath: `${DATA}db/${jobId}.scrap.db3`,
+  });
   registry[jobId] = {
     status: "minted",
     address: account.address.toLowerCase(),
     inboxId: client.inboxId,
     serviceInstallation: client.installationId,
+    scrapInstallation: scrapper.installationId,
     grantToken: randomBytes(24).toString("hex"),
     grantSignatures: 0,
     grantOpenedAt: null,
@@ -205,23 +216,31 @@ async function archive(jobId, client) {
   return { path, conversations: out.length, hashes: out.map((c) => c.transcriptHash) };
 }
 
-// Scrap = revoke every installation that isn't ours, THEN archive and flush.
-// Order matters: the service client must sync each conversation for the first
-// time after the revocation, so it rebuilds membership from the latest
-// identity state and its closing send commits the eviction (rotates the
-// epoch). Syncing before the revoke leaves the old membership cached and the
-// flush commits nothing (found the hard way; see docs/port-mechanics.md).
+// Scrap = revoke every installation except the scrapper, THEN archive and
+// flush from the scrapper. Order matters: the closing send only commits the
+// eviction (rotates the epoch) when the sending client syncs each
+// conversation for the first time AFTER the revocation, rebuilding
+// membership from the latest identity state. A client that synced before the
+// revoke keeps the old membership cached and its flush commits nothing
+// (found the hard way; see docs/port-mechanics.md) — and the working
+// installation has always synced by scrap time on a real job, because hire
+// reads /channel. Hence the cold scrapper installation minted alongside the
+// port. The working installation is revoked with the rest; the port dies
+// entirely.
 async function scrap(jobId) {
   const rec = registry[jobId];
   if (!rec) throw new Error("unknown job");
   if (rec.status === "scrapped") throw new Error("already scrapped");
 
+  const account = privateKeyToAccount(readFileSync(`${DATA}keys/${jobId}.key`, "utf8").trim());
+  // Ports minted before the scrapper existed fall back to the working
+  // installation, keeping the old (pre-synced, weaker) flush behavior.
+  const keeper = rec.scrapInstallation ?? rec.serviceInstallation;
   const state = await Client.inboxStateFromInboxIds([rec.inboxId], ENV);
   const foreign = state[0].installations
     .map((i) => i.id)
-    .filter((id) => id !== rec.serviceInstallation);
+    .filter((id) => id !== keeper);
   if (foreign.length > 0) {
-    const account = privateKeyToAccount(readFileSync(`${DATA}keys/${jobId}.key`, "utf8").trim());
     await Client.revokeInstallations(
       walletSigner(account),
       rec.inboxId,
@@ -230,9 +249,18 @@ async function scrap(jobId) {
     );
   }
 
-  const client = await portClient(jobId);
-  const archived = await archive(jobId, client);
-  for (const c of await client.conversations.list()) {
+  const scrapClient = rec.scrapInstallation
+    ? await Client.create(walletSigner(account), {
+        env: ENV,
+        dbPath: `${DATA}db/${jobId}.scrap.db3`,
+        codecs: [new RemoteAttachmentCodec(), new AttachmentCodec()],
+      })
+    : await portClient(jobId);
+  if (rec.scrapInstallation && scrapClient.installationId !== rec.scrapInstallation)
+    throw new Error(`scrap installation mismatch for job ${jobId}`);
+
+  const archived = await archive(jobId, scrapClient);
+  for (const c of await scrapClient.conversations.list()) {
     await c.send("[port closed]");
   }
 
