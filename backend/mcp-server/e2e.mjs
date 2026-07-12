@@ -6,12 +6,38 @@ import { readFileSync } from "node:fs";
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Client as Xmtp, IdentifierKind } from "@xmtp/node-sdk";
+import {
+  AttachmentCodec,
+  ContentTypeRemoteAttachment,
+  RemoteAttachmentCodec,
+} from "@xmtp/content-type-remote-attachment";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { toBytes } from "viem";
 import { commitmentHash, signingMessage } from "../commitment/commitment.mjs";
 
 const MCP = "http://localhost:8792/mcp";
 const REST = "http://localhost:8792";
+const PORT_SVC = "http://localhost:8791";
+
+// The stock codec refuses non-https URLs; local rails serve the attachment
+// store over plain http. Same wire format, relaxed scheme check.
+class DevRemoteAttachmentCodec extends RemoteAttachmentCodec {
+  encode(content) {
+    return {
+      type: ContentTypeRemoteAttachment,
+      parameters: {
+        contentDigest: content.contentDigest,
+        salt: Buffer.from(content.salt).toString("hex"),
+        nonce: Buffer.from(content.nonce).toString("hex"),
+        secret: Buffer.from(content.secret).toString("hex"),
+        scheme: content.scheme,
+        contentLength: String(content.contentLength),
+        filename: content.filename,
+      },
+      content: new TextEncoder().encode(content.url),
+    };
+  }
+}
 const ok = (name, cond) => {
   console.log(`${cond ? "ok " : "FAIL"} - ${name}`);
   if (!cond) process.exitCode = 1;
@@ -55,7 +81,7 @@ const fl = await Xmtp.create(
     getIdentifier: () => ({ identifier: flAccount.address.toLowerCase(), identifierKind: IdentifierKind.Ethereum }),
     signMessage: async (message) => toBytes(await flAccount.signMessage({ message })),
   },
-  { env: "dev", dbPath: `./data/e2e-fl-${jobId}.db3` },
+  { env: "dev", dbPath: `./data/e2e-fl-${jobId}.db3`, codecs: [new DevRemoteAttachmentCodec(), new AttachmentCodec()] },
 );
 const claim = await rest("POST", `/jobs/${jobId}/claims`, {
   inboxId: fl.inboxId,
@@ -100,6 +126,51 @@ const countersigned = await rest("POST", `/jobs/${jobId}/countersign`, {
   signature: await flAccount.signMessage({ message: hire.signThisExactly }),
 });
 ok("freelancer countersignature verifies, job is hired", countersigned.hired);
+
+// 4b. delivery: the freelancer encrypts the deliverable, uploads the
+// ciphertext to the port's attachment store, and sends the evidence through
+// the same DM the negotiation rode. The agent reviews it from get_offers
+// alone: no XMTP client, just the envelope the channel surfaces.
+const deliverable = { filename: "docs-review.md", mimeType: "text/markdown", data: new TextEncoder().encode("# Review\n\n700 words about the Prime Port docs.") };
+const encrypted = await RemoteAttachmentCodec.encodeEncrypted(deliverable, new AttachmentCodec());
+const uploaded = await (await fetch(`${PORT_SVC}/ports/${jobId}/attachments`, { method: "POST", body: encrypted.payload })).json();
+await dm.send(
+  {
+    url: uploaded.url,
+    contentDigest: encrypted.digest,
+    salt: encrypted.salt,
+    nonce: encrypted.nonce,
+    secret: encrypted.secret,
+    scheme: "https://",
+    contentLength: encrypted.payload.length,
+    filename: deliverable.filename,
+  },
+  ContentTypeRemoteAttachment,
+);
+const offersAfterDelivery = await call("get_offers", { jobId });
+const evidence = offersAfterDelivery.offers[0].attachments;
+ok(
+  "get_offers surfaces the delivered evidence with its envelope",
+  evidence.length === 1 && evidence[0].filename === deliverable.filename && evidence[0].contentDigest === encrypted.digest && !!evidence[0].secret,
+);
+const hexToBytes = (h) => Uint8Array.from(h.match(/.{2}/g).map((b) => parseInt(b, 16)));
+const opened = await RemoteAttachmentCodec.load(
+  {
+    url: evidence[0].url,
+    contentDigest: evidence[0].contentDigest,
+    secret: hexToBytes(evidence[0].secret),
+    salt: hexToBytes(evidence[0].salt),
+    nonce: hexToBytes(evidence[0].nonce),
+    scheme: "https://",
+    contentLength: evidence[0].contentLength,
+    filename: evidence[0].filename,
+  },
+  { codecFor: () => new AttachmentCodec() },
+);
+ok(
+  "agent decrypts the deliverable from the get_offers envelope alone",
+  opened.filename === deliverable.filename && Buffer.from(opened.data).equals(Buffer.from(deliverable.data)),
+);
 
 // 5. approve: settle + scrap
 const approved = await call("approve", { jobId });

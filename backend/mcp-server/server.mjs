@@ -141,19 +141,27 @@ function buildServer() {
 
   mcp.tool(
     "get_offers",
-    "List freelancers who claimed this job, with their negotiation channels' latest state.",
+    "List freelancers who claimed this job, with their negotiation channels' latest state. Delivered evidence shows up here as attachment messages: encrypted payload URL plus the key material to decrypt it (XMTP remote attachments; agents on port_connect receive the same envelopes natively).",
     { jobId: z.string() },
     async ({ jobId }) => {
       const job = getJob(jobId);
       const { conversations } = await portSvc("GET", `/ports/${jobId}/conversations`);
-      const offers = job.claims.map((claim) => {
+      const offers = [];
+      for (const claim of job.claims) {
         const { jobsClaimed, jobsCompleted, completionRate, avgStars, reviewCount } = reputation(claim.inboxId);
-        return {
+        const channel = conversations.find((c) => c.peerInboxId === claim.inboxId) ?? { messageCount: 0 };
+        // Evidence delivered on this channel, envelope and all, so the agent
+        // can fetch and decrypt each deliverable without its own XMTP client.
+        const attachments = channel.attachmentCount
+          ? (await portSvc("GET", `/ports/${jobId}/channel?peer=${claim.inboxId}`)).messages.filter((m) => m.kind === "attachment")
+          : [];
+        offers.push({
           ...claim,
           reputation: { jobsClaimed, jobsCompleted, completionRate, avgStars, reviewCount },
-          channel: conversations.find((c) => c.peerInboxId === claim.inboxId) ?? { messageCount: 0 },
-        };
-      });
+          channel,
+          attachments,
+        });
+      }
       return text({ jobId, status: job.status, offers });
     },
   );

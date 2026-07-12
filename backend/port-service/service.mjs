@@ -144,7 +144,10 @@ function canonicalContent(m) {
 const contentSha256 = (m) => "0x" + createHash("sha256").update(canonicalContent(m)).digest("hex");
 
 // The public row shape for one message on a channel surface (/channel,
-// /conversations, and through them the agent's get_offers).
+// /conversations, and through them the agent's get_offers). Attachment rows
+// carry the whole envelope, key material included: agents on the relayed
+// fallback path have no XMTP client of their own, and these surfaces already
+// hand out the channel's plaintext, so the envelope hides nothing extra.
 const messageRow = (m, portInboxId) =>
   typeof m.content === "string"
     ? { fromPort: m.senderInboxId === portInboxId, kind: "text", content: m.content }
@@ -155,6 +158,9 @@ const messageRow = (m, portInboxId) =>
         contentLength: m.content.contentLength ?? 0,
         contentDigest: m.content.contentDigest,
         url: m.content.url,
+        secret: hex(m.content.secret),
+        salt: hex(m.content.salt),
+        nonce: hex(m.content.nonce),
       };
 const isVisible = (m) => typeof m.content === "string" || isRemoteAttachment(m);
 
