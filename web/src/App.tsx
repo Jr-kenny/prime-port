@@ -8,6 +8,8 @@ import type { FormEvent } from "react";
 import { useLoginWithEmail, useLoginWithOAuth } from "@privy-io/react-auth";
 import { claimJob, countersignHire, getProfile, listJobs } from "./api";
 import type { FreelancerProfile, PublicJob } from "./api";
+import { ContentTypeRemoteAttachment, decryptAndSave, encryptAndUpload, fmtBytes } from "./attachments";
+import type { RemoteAttachment } from "./attachments";
 import { shortAddr, useIdentity } from "./identity";
 import type { Session } from "./identity";
 import { CAT_COLORS, HERO_CHIPS, MONO, BODY, SAFETY, STEPS, siteStyles, siteThemeFor } from "./theme";
@@ -482,8 +484,20 @@ function SignIn({ t, s, navigate, jobs, jobId, session, refreshJobs }: Shared & 
 
 // 2d: chat, split-pane like a desktop messenger. The conversation is a real
 // XMTP DM with the job's port inbox: what the agent's negotiate sends shows
-// up here, and what's typed here lands in the agent's get_offers.
-type PortMessage = { id: string; text: string; mine: boolean; at: number };
+// up here, and what's typed here lands in the agent's get_offers. Evidence
+// rides the same DM as remote attachments (attachments.ts): encrypted file
+// in the port's store, envelope in the message, digest in the archive.
+type PortMessage = { id: string; text: string; mine: boolean; at: number; attachment?: RemoteAttachment };
+type XmtpDm = Awaited<ReturnType<NonNullable<Session["xmtp"]>["conversations"]["newDm"]>>;
+
+const toPortMessages = (msgs: Awaited<ReturnType<XmtpDm["messages"]>>, myInboxId: string): PortMessage[] =>
+  msgs.flatMap((m) => {
+    const base = { id: m.id, mine: m.senderInboxId === myInboxId, at: Number(m.sentAtNs / 1_000_000n) };
+    if (typeof m.content === "string") return [{ ...base, text: m.content }];
+    const a = m.content as RemoteAttachment | undefined;
+    if (a?.contentDigest) return [{ ...base, text: `📎 ${a.filename || "attachment"}`, attachment: a }];
+    return [];
+  });
 
 // The exact string both wallets personal_sign over a hire; must match
 // signingMessage() in backend/commitment/commitment.mjs.
@@ -499,7 +513,9 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
   const [transportError, setTransportError] = useState("");
   const [signing, setSigning] = useState(false);
   const [signError, setSignError] = useState("");
-  const dmRef = useRef<Awaited<ReturnType<NonNullable<Session["xmtp"]>["conversations"]["newDm"]>> | null>(null);
+  const [uploading, setUploading] = useState<{ name: string; pct: number } | null>(null);
+  const dmRef = useRef<XmtpDm | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const xmtp = session.xmtp;
@@ -514,16 +530,7 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
       await dm.sync();
       const msgs = await dm.messages();
       if (stopped) return;
-      setMessages(
-        msgs
-          .filter((m) => typeof m.content === "string")
-          .map((m) => ({
-            id: m.id,
-            text: m.content as string,
-            mine: m.senderInboxId === xmtp.inboxId,
-            at: Number(m.sentAtNs / 1_000_000n),
-          })),
-      );
+      setMessages(toPortMessages(msgs, xmtp.inboxId ?? ""));
     };
     (async () => {
       try {
@@ -543,6 +550,13 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
     };
   }, [session.xmtp, activeClaim?.portInboxId]);
 
+  const pullMessages = async () => {
+    const dm = dmRef.current;
+    if (!dm || !session.xmtp) return;
+    await dm.sync();
+    setMessages(toPortMessages(await dm.messages(), session.xmtp.inboxId ?? ""));
+  };
+
   const send = async (e: FormEvent) => {
     e.preventDefault();
     const text = draft.trim();
@@ -551,17 +565,34 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
     setDraft("");
     try {
       await dm.send(text);
-      await dm.sync();
-      const msgs = await dm.messages();
-      setMessages(
-        msgs
-          .filter((m) => typeof m.content === "string")
-          .map((m) => ({ id: m.id, text: m.content as string, mine: m.senderInboxId === session.xmtp!.inboxId, at: Number(m.sentAtNs / 1_000_000n) })),
-      );
+      await pullMessages();
     } catch (err) {
       setTransportError((err as Error).message);
     }
   };
+
+  // Evidence: encrypt in the browser, upload the ciphertext to the port's
+  // store with progress, then send the envelope through the DM itself.
+  const attach = async (file: File) => {
+    const dm = dmRef.current;
+    if (!dm || !activeJob || uploading) return;
+    setTransportError("");
+    setUploading({ name: file.name, pct: 0 });
+    try {
+      const content = await encryptAndUpload(activeJob.jobId, file, (f) =>
+        setUploading({ name: file.name, pct: Math.round(f * 100) }),
+      );
+      await dm.send(content, ContentTypeRemoteAttachment);
+      await pullMessages();
+    } catch (err) {
+      setTransportError((err as Error).message);
+    } finally {
+      setUploading(null);
+    }
+  };
+
+  const download = (attachment: RemoteAttachment) =>
+    decryptAndSave(attachment).catch((err) => setTransportError((err as Error).message));
 
   // The hire moment: the agent signed first, the freelancer countersigns here
   // and escrow locks. Only shown to the wallet the commitment names.
@@ -695,12 +726,54 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
                           : { maxWidth: "60%", padding: "12px 16px", borderRadius: 14, font: `400 14px/1.5 ${BODY}`, background: t.cardBg, border: `1px solid ${t.border}`, color: t.ink }
                       }
                     >
-                      {m.text}
+                      {m.attachment ? (
+                        <button
+                          onClick={() => download(m.attachment!)}
+                          title="Decrypt and download"
+                          style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: 0, font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }}
+                        >
+                          <span aria-hidden>📎</span>
+                          <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                            <span style={{ fontWeight: 700, textDecoration: "underline" }}>{m.attachment.filename || "attachment"}</span>
+                            <span style={{ opacity: 0.75, fontSize: 12 }}>Evidence · {fmtBytes(m.attachment.contentLength ?? 0)} · encrypted</span>
+                          </span>
+                        </button>
+                      ) : (
+                        m.text
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
+              {uploading && (
+                <div style={{ padding: "6px 16px", font: `400 12px/1.5 ${BODY}`, color: t.muted, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span>Encrypting &amp; uploading {uploading.name} · {uploading.pct}%</span>
+                  <span style={{ flex: 1, height: 4, borderRadius: 2, background: t.border, overflow: "hidden" }}>
+                    <span style={{ display: "block", height: "100%", width: `${uploading.pct}%`, background: t.accent, transition: "width .2s" }} />
+                  </span>
+                </div>
+              )}
               <form style={s.dchatComposerWrap} onSubmit={send}>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) attach(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  style={{ ...s.dchatIconBtn, opacity: uploading ? 0.4 : 1 }}
+                  onClick={() => fileRef.current?.click()}
+                  disabled={!!uploading}
+                  aria-label="Attach evidence"
+                  title="Attach evidence (encrypted end-to-end)"
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M21 12.2v5.3a4.5 4.5 0 0 1-9 0V8a3 3 0 0 1 6 0v8a1.5 1.5 0 0 1-3 0V9" stroke={t.ink} strokeWidth="1.8" strokeLinecap="round" /></svg>
+                </button>
                 <input style={s.dchatComposerInput} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Type a message…" />
                 <button type="submit" style={s.dchatSendBtn} aria-label="Send">
                   <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 12L20 4L13 20L11 13L4 12Z" fill="#fff" /></svg>
