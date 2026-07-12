@@ -12,7 +12,11 @@ export type PublicJob = {
   port: { inboxId: string };
   pendingHire?: {
     hash: string;
-    commitment: { freelancer: { inboxId: string; wallet: string; payoutAddress: string } };
+    commitment: {
+      freelancer: { inboxId: string; wallet: string; payoutAddress: string };
+      price: string;
+      currency: string;
+    };
   };
   createdAt: number;
 };
