@@ -636,7 +636,7 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
                       <span style={s.dchatThreadName}>{job?.title ?? claim.jobId}</span>
                       <span style={s.dchatThreadTime}>{last ? fmtTime(last.at) : ""}</span>
                     </div>
-                    <span style={s.dchatThreadPreview}>{last ? `${last.mine ? "You: " : ""}${last.text.slice(0, 38)}` : statusLabel(job) || "Claimed"}</span>
+                    <span style={s.dchatThreadPreview}>{last ? `${last.mine ? "You: " : ""}${last.text.slice(0, 38)}` : statusLabel(job) || "Applied"}</span>
                   </div>
                 </div>
               );
@@ -765,7 +765,7 @@ function Settings({ t, s, navigate, session, identity, claims, jobs }: Shared) {
     .reduce((sum, j) => sum + Number(j.pendingHire!.commitment.price), 0);
 
   const historyFor = (job?: PublicJob): { label: string; strong?: boolean } => {
-    if (!job || job.status === "open" || job.status === "hiring") return { label: "Claimed" };
+    if (!job || job.status === "open" || job.status === "hiring") return { label: "Applied" };
     if (!hiredMe(job)) return { label: "Went to another freelancer" };
     if (job.status === "awaiting-freelancer-signature") return { label: "Awaiting your signature", strong: true };
     if (job.status === "settled") return { label: `Paid · ${commitPrice(job)}`, strong: true };
@@ -851,7 +851,7 @@ function Settings({ t, s, navigate, session, identity, claims, jobs }: Shared) {
 
       <div style={s.setCard}>
         <div style={s.setCardHead}>Payment history</div>
-        {claims.length === 0 && <span style={s.setHistoryDate}>Nothing yet. Claimed jobs and payouts show up here.</span>}
+        {claims.length === 0 && <span style={s.setHistoryDate}>Nothing yet. Jobs you apply for and payouts show up here.</span>}
         {claims.map((c) => {
           const job = jobs.find((j) => j.jobId === c.jobId);
           const h = historyFor(job);
