@@ -8,7 +8,12 @@ export type PublicJob = {
   currency: string;
   deadline: number;
   agent?: { agentId: string; wallet: string };
-  claims: { inboxId: string; name: string; claimedAt: number }[];
+  claims: { inboxId: string; wallet: string; payoutAddress: string; name: string; claimedAt: number }[];
+  port: { inboxId: string };
+  pendingHire?: {
+    hash: string;
+    commitment: { freelancer: { inboxId: string; wallet: string; payoutAddress: string } };
+  };
   createdAt: number;
 };
 
