@@ -6,9 +6,35 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { Client, IdentifierKind } from "@xmtp/node-sdk";
+import {
+  AttachmentCodec,
+  ContentTypeRemoteAttachment,
+  RemoteAttachmentCodec,
+} from "@xmtp/content-type-remote-attachment";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { toBytes } from "viem";
 import { transcriptHash } from "../commitment/commitment.mjs";
+
+// The stock codec refuses to encode non-https URLs; local rails serve the
+// attachment store over plain http. Same wire format, relaxed scheme check.
+class DevRemoteAttachmentCodec extends RemoteAttachmentCodec {
+  encode(content) {
+    return {
+      type: ContentTypeRemoteAttachment,
+      parameters: {
+        contentDigest: content.contentDigest,
+        salt: Buffer.from(content.salt).toString("hex"),
+        nonce: Buffer.from(content.nonce).toString("hex"),
+        secret: Buffer.from(content.secret).toString("hex"),
+        scheme: content.scheme,
+        contentLength: String(content.contentLength),
+        filename: content.filename,
+      },
+      content: new TextEncoder().encode(content.url),
+    };
+  }
+}
+const codecs = [new DevRemoteAttachmentCodec(), new AttachmentCodec()];
 
 const SVC = "http://localhost:8791";
 const jobId = `e2e-${Date.now()}`;
@@ -42,7 +68,7 @@ const agentSigner = {
       ).signature,
     ),
 };
-const agent = await Client.create(agentSigner, { env: "dev", dbPath: `./data/e2e-agent-${jobId}.db3` });
+const agent = await Client.create(agentSigner, { env: "dev", dbPath: `./data/e2e-agent-${jobId}.db3`, codecs });
 ok("agent installation lands on port inbox", agent.inboxId === port.inboxId);
 
 // wrong token must fail
@@ -61,7 +87,7 @@ const fl = await Client.create(
     getIdentifier: () => ({ identifier: flAccount.address.toLowerCase(), identifierKind: IdentifierKind.Ethereum }),
     signMessage: async (message) => toBytes(await flAccount.signMessage({ message })),
   },
-  { env: "dev", dbPath: `./data/e2e-fl-${jobId}.db3` },
+  { env: "dev", dbPath: `./data/e2e-fl-${jobId}.db3`, codecs },
 );
 const dm = await fl.conversations.newDm(port.inboxId);
 await dm.send("claiming this job. 40 USDT is low, I want 55.");
@@ -72,6 +98,45 @@ await agentSide.send("meet me at 48 and it's a deal.");
 await dm.sync();
 const reply = (await dm.messages()).find((m) => m.senderInboxId === port.inboxId && typeof m.content === "string");
 ok("freelancer sees agent's reply as the port", !!reply);
+
+// evidence: freelancer encrypts a deliverable locally, uploads the ciphertext
+// to the port's attachment store, and sends the remote-attachment envelope
+// through the same DM the negotiation rode.
+const deliverable = { filename: "final-cut-15s.mp4", mimeType: "video/mp4", data: new TextEncoder().encode("pretend this is 15 seconds of vertical video") };
+const encrypted = await RemoteAttachmentCodec.encodeEncrypted(deliverable, new AttachmentCodec());
+const uploadRes = await fetch(`${SVC}/ports/${jobId}/attachments`, { method: "POST", body: encrypted.payload });
+const uploaded = await uploadRes.json();
+ok("upload stores ciphertext under its own digest", uploadRes.ok && uploaded.contentDigest === encrypted.digest && uploaded.url.endsWith(encrypted.digest));
+const remoteAttachment = {
+  url: uploaded.url,
+  contentDigest: encrypted.digest,
+  salt: encrypted.salt,
+  nonce: encrypted.nonce,
+  secret: encrypted.secret,
+  scheme: "https://",
+  contentLength: encrypted.payload.length,
+  filename: deliverable.filename,
+};
+await dm.send(remoteAttachment, ContentTypeRemoteAttachment);
+
+// the agent, running as the port via the grant, decrypts the evidence
+await agent.conversations.syncAll();
+await agentSide.sync();
+const evidenceMsg = (await agentSide.messages()).find((m) => m.contentType?.typeId === "remoteStaticAttachment");
+ok("agent receives the remote-attachment envelope", !!evidenceMsg && evidenceMsg.content.contentDigest === encrypted.digest);
+const loaded = await RemoteAttachmentCodec.load(evidenceMsg.content, { codecFor: () => new AttachmentCodec() });
+ok(
+  "agent decrypts the deliverable and it matches what was sent",
+  loaded.filename === deliverable.filename && Buffer.from(loaded.data).equals(Buffer.from(deliverable.data)),
+);
+
+// the channel surface shows the attachment row (this is what get_offers sees)
+const ch = await api("GET", `/ports/${jobId}/channel?peer=${fl.inboxId}`);
+const attRow = ch.messages.find((m) => m.kind === "attachment");
+ok(
+  "channel surfaces the attachment with filename and digest",
+  !!attRow && attRow.filename === deliverable.filename && attRow.contentDigest === encrypted.digest && !attRow.fromPort,
+);
 
 // scrap through the API
 const scrapped = await api("POST", `/ports/${jobId}/scrap`, {});
@@ -110,6 +175,36 @@ const rehash = textRows.every((p) => {
   return entry.contentSha256 === "0x" + createHash("sha256").update(p.content).digest("hex");
 });
 ok("plaintext re-hashes to the committed entry hashes", rehash);
+
+// evidence in the archive: the payload rode along, its bytes re-hash to the
+// digest the transcript committed to, and the envelope re-hashes to its entry
+const attRow2 = convo.plaintext.find((p) => p.attachment);
+ok("archive carries the attachment envelope", !!attRow2 && attRow2.attachment.contentDigest === encrypted.digest);
+const payloadPath = new URL(`./data/archive/${attRow2.attachment.payload}`, import.meta.url).pathname;
+const payloadBytes = readFileSync(payloadPath);
+ok(
+  "archived payload re-hashes to the committed contentDigest",
+  createHash("sha256").update(payloadBytes).digest("hex") === encrypted.digest,
+);
+const attEntry = convo.entries.find((e) => e.id === attRow2.id);
+const canonical = JSON.stringify({
+  type: "remote-attachment",
+  url: attRow2.attachment.url,
+  contentDigest: attRow2.attachment.contentDigest,
+  filename: attRow2.attachment.filename,
+  contentLength: attRow2.attachment.contentLength,
+  secret: attRow2.attachment.secret,
+  salt: attRow2.attachment.salt,
+  nonce: attRow2.attachment.nonce,
+});
+ok(
+  "attachment envelope re-hashes to its committed entry hash",
+  attEntry.contentSha256 === "0x" + createHash("sha256").update(canonical).digest("hex"),
+);
+
+// a scrapped port takes no more evidence
+const lateUpload = await fetch(`${SVC}/ports/${jobId}/attachments`, { method: "POST", body: encrypted.payload });
+ok("upload to a scrapped port is refused", lateUpload.status === 400);
 
 console.log(process.exitCode ? "E2E FAILED" : "E2E PASSED");
 process.exit(process.exitCode ?? 0);

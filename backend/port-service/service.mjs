@@ -10,6 +10,7 @@ import { createServer } from "node:http";
 import { randomBytes, createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { Client, IdentifierKind } from "@xmtp/node-sdk";
+import { AttachmentCodec, RemoteAttachmentCodec } from "@xmtp/content-type-remote-attachment";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { toBytes } from "viem";
 import { transcriptHash } from "../commitment/commitment.mjs";
@@ -19,10 +20,17 @@ const PORT = Number(process.env.PORT ?? 8791);
 const DATA = new URL("./data/", import.meta.url).pathname;
 const MAX_GRANT_SIGNATURES = 3; // one registration can ask for a couple of sigs
 const GRANT_WINDOW_MS = 10 * 60 * 1000;
+// Evidence payloads are encrypted client-side before they get here; we only
+// ever hold ciphertext. 50 MB comfortably fits a short deliverable video.
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+// Base for the URLs baked into remote-attachment messages. Every reader of
+// the channel (agent client, web app, archive verifier) fetches from here.
+const ATTACH_BASE = process.env.ATTACH_BASE ?? `http://localhost:${PORT}`;
 
 mkdirSync(`${DATA}keys`, { recursive: true });
 mkdirSync(`${DATA}db`, { recursive: true });
 mkdirSync(`${DATA}archive`, { recursive: true });
+mkdirSync(`${DATA}attachments`, { recursive: true });
 
 const registryPath = `${DATA}ports.json`;
 const registry = existsSync(registryPath) ? JSON.parse(readFileSync(registryPath, "utf8")) : {};
@@ -47,6 +55,9 @@ async function portClient(jobId) {
   const client = await Client.create(walletSigner(account), {
     env: ENV,
     dbPath: `${DATA}db/${jobId}.db3`,
+    // Evidence rides XMTP remote attachments (#18): without these codecs the
+    // port would see fallback text instead of the attachment envelope.
+    codecs: [new RemoteAttachmentCodec(), new AttachmentCodec()],
   });
   if (rec.inboxId && client.inboxId !== rec.inboxId)
     throw new Error(`inbox mismatch for job ${jobId}`);
@@ -90,11 +101,80 @@ function grantSign(jobId, token, message) {
   return account.signMessage({ message });
 }
 
+// Evidence messages (#18): a remote attachment is a small envelope — URL of
+// the encrypted payload, the digest that pins those bytes, and the key
+// material to decrypt them. The payload itself lives in our attachment store.
+const isRemoteAttachment = (m) =>
+  m.contentType?.typeId === "remoteStaticAttachment" && !!m.content?.contentDigest;
+const hex = (u8) => Buffer.from(u8).toString("hex");
+
+// Canonical bytes an entry hash commits to. Text hashes as utf8. A remote
+// attachment hashes a stable JSON of its envelope: contentDigest inside binds
+// the encrypted payload bytes, and the key material inside means whoever
+// holds the archive can decrypt the deliverable it commits to. Everything
+// else hashes its JSON encoding, as before.
+function canonicalContent(m) {
+  if (typeof m.content === "string") return m.content;
+  if (isRemoteAttachment(m)) {
+    const a = m.content;
+    return JSON.stringify({
+      type: "remote-attachment",
+      url: a.url,
+      contentDigest: a.contentDigest,
+      filename: a.filename ?? "",
+      contentLength: a.contentLength ?? 0,
+      secret: hex(a.secret),
+      salt: hex(a.salt),
+      nonce: hex(a.nonce),
+    });
+  }
+  return JSON.stringify(m.content ?? "");
+}
+const contentSha256 = (m) => "0x" + createHash("sha256").update(canonicalContent(m)).digest("hex");
+
+// The public row shape for one message on a channel surface (/channel,
+// /conversations, and through them the agent's get_offers).
+const messageRow = (m, portInboxId) =>
+  typeof m.content === "string"
+    ? { fromPort: m.senderInboxId === portInboxId, kind: "text", content: m.content }
+    : {
+        fromPort: m.senderInboxId === portInboxId,
+        kind: "attachment",
+        filename: m.content.filename ?? "",
+        contentLength: m.content.contentLength ?? 0,
+        contentDigest: m.content.contentDigest,
+        url: m.content.url,
+      };
+const isVisible = (m) => typeof m.content === "string" || isRemoteAttachment(m);
+
+// At scrap, an attachment's payload moves into the archive next to the
+// transcript that commits to it: verify the stored ciphertext against the
+// digest the entry hash pinned, then copy it. The envelope (with key
+// material) goes into the plaintext row so the deliverable stays readable
+// after the port and its store are gone.
+function archiveAttachment(jobId, a) {
+  const meta = {
+    filename: a.filename ?? "",
+    contentLength: a.contentLength ?? 0,
+    contentDigest: a.contentDigest,
+    url: a.url,
+    secret: hex(a.secret),
+    salt: hex(a.salt),
+    nonce: hex(a.nonce),
+  };
+  const src = `${DATA}attachments/${jobId}/${a.contentDigest}`;
+  if (!existsSync(src)) return { ...meta, payload: null, note: "payload not hosted here" };
+  const payload = readFileSync(src);
+  if (createHash("sha256").update(payload).digest("hex") !== a.contentDigest)
+    return { ...meta, payload: null, note: "stored payload does not match contentDigest" };
+  mkdirSync(`${DATA}archive/${jobId}.attachments`, { recursive: true });
+  writeFileSync(`${DATA}archive/${jobId}.attachments/${a.contentDigest}`, payload);
+  return { ...meta, payload: `${jobId}.attachments/${a.contentDigest}` };
+}
+
 // Archive every conversation on the port. Entries are exactly the transcript
-// rows the hire commitment hashes over (docs/hire-commitment.md). Text content
-// hashes as utf8; non-text content hashes its JSON encoding for now (binary
-// attachments ride XMTP remote-attachment types and get their own treatment
-// when the evidence pipe lands).
+// rows the hire commitment hashes over (docs/hire-commitment.md); see
+// canonicalContent for what each entry hash commits to.
 async function archive(jobId, client) {
   await client.conversations.syncAll();
   const convos = await client.conversations.list();
@@ -106,11 +186,7 @@ async function archive(jobId, client) {
       id: m.id,
       sender: m.senderInboxId,
       sentAtNs: String(m.sentAtNs),
-      contentSha256:
-        "0x" +
-        createHash("sha256")
-          .update(typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? ""))
-          .digest("hex"),
+      contentSha256: contentSha256(m),
     }));
     out.push({
       conversationId: c.id,
@@ -120,6 +196,7 @@ async function archive(jobId, client) {
         id: m.id,
         sender: m.senderInboxId,
         content: typeof m.content === "string" ? m.content : null,
+        ...(isRemoteAttachment(m) ? { attachment: archiveAttachment(jobId, m.content) } : {}),
       })),
     });
   }
@@ -188,11 +265,30 @@ async function channel(jobId, peerInboxId) {
   throw new Error(`no channel with ${peerInboxId}`);
 }
 
-const contentSha256 = (m) =>
-  "0x" +
-  createHash("sha256")
-    .update(typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? ""))
-    .digest("hex");
+// Accept one encrypted evidence payload for a live port. The blob is named
+// by the sha256 of its bytes, so the URL we hand back is self-authenticating:
+// RemoteAttachmentCodec.load re-hashes on download and the archive re-hashes
+// at scrap, both against the same digest. Re-uploading the same bytes is a
+// no-op. Anyone who knows a live jobId can upload (same bar as claiming);
+// the size cap is the abuse guard that matters here.
+async function acceptUpload(req, jobId) {
+  const rec = registry[jobId];
+  if (!rec) throw new Error("unknown job");
+  if (rec.status === "scrapped") throw new Error("port is scrapped");
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_ATTACHMENT_BYTES) throw new Error(`attachment exceeds ${MAX_ATTACHMENT_BYTES} bytes`);
+    chunks.push(chunk);
+  }
+  if (size === 0) throw new Error("empty upload");
+  const payload = Buffer.concat(chunks);
+  const digest = createHash("sha256").update(payload).digest("hex");
+  mkdirSync(`${DATA}attachments/${jobId}`, { recursive: true });
+  writeFileSync(`${DATA}attachments/${jobId}/${digest}`, payload);
+  return { contentDigest: digest, contentLength: size, url: `${ATTACH_BASE}/attachments/${jobId}/${digest}` };
+}
 
 const routes = {
   "POST /ports": async (body) => {
@@ -216,13 +312,12 @@ const routes = {
     for (const c of await client.conversations.list()) {
       await c.sync();
       const messages = await c.messages();
-      const texts = messages.filter((m) => typeof m.content === "string");
+      const visible = messages.filter(isVisible);
       out.push({
         peerInboxId: c.peerInboxId,
-        messageCount: texts.length,
-        lastMessage: texts.at(-1)
-          ? { fromPort: texts.at(-1).senderInboxId === rec.inboxId, content: texts.at(-1).content }
-          : null,
+        messageCount: visible.length,
+        attachmentCount: visible.filter((m) => typeof m.content !== "string").length,
+        lastMessage: visible.at(-1) ? messageRow(visible.at(-1), rec.inboxId) : null,
       });
     }
     return { jobId, conversations: out };
@@ -243,9 +338,7 @@ const routes = {
           contentSha256: contentSha256(m),
         })),
       ),
-      messages: messages
-        .filter((m) => typeof m.content === "string")
-        .map((m) => ({ fromPort: m.senderInboxId === rec.inboxId, content: m.content })),
+      messages: messages.filter(isVisible).map((m) => messageRow(m, rec.inboxId)),
     };
   },
   "POST /ports/:jobId/messages": async (body, { jobId }) => {
@@ -262,17 +355,40 @@ const routes = {
 };
 
 createServer(async (req, res) => {
-  const body = await new Promise((r) => {
-    let d = "";
-    req.on("data", (c) => (d += c));
-    req.on("end", () => r(d ? JSON.parse(d) : {}));
-  });
+  const path = new URL(req.url, "http://x").pathname;
+  // The browser app uploads evidence straight here and readers fetch payloads
+  // back cross-origin. Blobs are ciphertext behind capability URLs, so a
+  // permissive origin gives nothing away.
+  res.setHeader("access-control-allow-origin", "*");
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "access-control-allow-methods": "GET, POST, OPTIONS",
+      "access-control-allow-headers": "content-type, x-grant-token",
+    });
+    return res.end();
+  }
   const reply = (code, obj) => {
     res.writeHead(code, { "content-type": "application/json" });
     res.end(JSON.stringify(obj));
   };
   try {
-    const path = new URL(req.url, "http://x").pathname;
+    // Binary surfaces first: these must not go through the JSON body read.
+    const serve = path.match(/^\/attachments\/([\w.-]+)\/([0-9a-f]{64})$/);
+    if (serve && req.method === "GET") {
+      const file = `${DATA}attachments/${serve[1]}/${serve[2]}`;
+      if (!existsSync(file)) return reply(404, { error: "no such attachment" });
+      const payload = readFileSync(file);
+      res.writeHead(200, { "content-type": "application/octet-stream", "content-length": payload.length });
+      return res.end(payload);
+    }
+    const upload = path.match(/^\/ports\/([\w.-]+)\/attachments$/);
+    if (upload && req.method === "POST") return reply(200, await acceptUpload(req, upload[1]));
+
+    const body = await new Promise((r) => {
+      let d = "";
+      req.on("data", (c) => (d += c));
+      req.on("end", () => r(d ? JSON.parse(d) : {}));
+    });
     const m = path.match(/^\/ports\/([\w.-]+)(\/[\w/]+)?$/);
     const key = m ? `${req.method} /ports/:jobId${m[2] ?? ""}` : `${req.method} ${path}`;
     const handler = routes[key];
