@@ -1,0 +1,59 @@
+/* Screens style themselves inline from theme.ts (transcribed from the
+   prototype). This file only holds what inline styles cannot express:
+   the font faces, resets, and responsive stacking below desktop width. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Inter+Tight:wght@700;800;900&display=swap");
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button {
+  font: inherit;
+}
+
+@media (max-width: 1020px) {
+  .pp-herosplit {
+    grid-template-columns: 1fr !important;
+  }
+
+  .pp-heromocks {
+    display: none !important;
+  }
+
+  .pp-grid4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .pp-grid3 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .pp-detail {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 680px) {
+  .pp-grid4,
+  .pp-grid3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  .pp-navlinks {
+    display: none !important;
+  }
+
+  .pp-chat {
+    grid-template-columns: 1fr !important;
+  }
+
+  .pp-chat > div:first-child {
+    display: none !important;
+  }
+}
