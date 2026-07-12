@@ -766,7 +766,7 @@ function Settings({ t, s, navigate, session, identity, claims, jobs }: Shared) {
 
   const historyFor = (job?: PublicJob): { label: string; strong?: boolean } => {
     if (!job || job.status === "open" || job.status === "hiring") return { label: "Applied" };
-    if (!hiredMe(job)) return { label: "Went to another freelancer" };
+    if (!hiredMe(job)) return { label: "Filled" };
     if (job.status === "awaiting-freelancer-signature") return { label: "Awaiting your signature", strong: true };
     if (job.status === "settled") return { label: `Paid · ${commitPrice(job)}`, strong: true };
     return { label: `Escrow locked · ${commitPrice(job)}`, strong: true };
