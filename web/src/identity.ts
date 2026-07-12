@@ -7,7 +7,13 @@ import { useEffect, useRef, useState } from "react";
 import { useCreateWallet, useLogout, usePrivy, useWallets } from "@privy-io/react-auth";
 import type { ConnectedWallet } from "@privy-io/react-auth";
 import { Client } from "@xmtp/browser-sdk";
+import type { GroupUpdated } from "@xmtp/content-type-group-updated";
+import type { Attachment, RemoteAttachment } from "@xmtp/content-type-remote-attachment";
 import { toBytes } from "viem";
+import { attachmentCodecs } from "./attachments";
+
+// The client's content types once the evidence codecs are registered.
+export type XmtpClient = Client<string | GroupUpdated | RemoteAttachment | Attachment>;
 
 export type Identity = {
   name: string;
@@ -26,7 +32,7 @@ export type Session = {
   stage?: "wallet" | "inbox";
   error?: string;
   identity: Identity | null;
-  xmtp: Client | null;
+  xmtp: XmtpClient | null;
   signMessage: (message: string) => Promise<string>;
   setPayoutAddress: (address: string) => void;
   signOut: () => Promise<void>;
@@ -47,9 +53,9 @@ async function personalSign(wallet: ConnectedWallet, message: string): Promise<s
 
 // One XMTP client per wallet per page load: StrictMode double-mounts and
 // re-renders must not race a second Client.create against the same local db.
-const xmtpCache = new Map<string, Promise<Client>>();
+const xmtpCache = new Map<string, Promise<XmtpClient>>();
 
-function xmtpFor(wallet: ConnectedWallet): Promise<Client> {
+function xmtpFor(wallet: ConnectedWallet): Promise<XmtpClient> {
   const address = wallet.address.toLowerCase();
   let cached = xmtpCache.get(address);
   if (!cached) {
@@ -59,7 +65,9 @@ function xmtpFor(wallet: ConnectedWallet): Promise<Client> {
       signMessage: async (message: string) => toBytes(await personalSign(wallet, message)),
     };
     const started = Date.now();
-    cached = Client.create(signer, { env: XMTP_ENV });
+    // Codecs make evidence attachments decode into their envelope instead of
+    // the "can't display" fallback text (see attachments.ts).
+    cached = Client.create(signer, { env: XMTP_ENV, codecs: attachmentCodecs });
     xmtpCache.set(address, cached);
     cached.then(
       (c) => console.info(`[identity] xmtp inbox ${c.inboxId} ready in ${Date.now() - started}ms`),
@@ -75,7 +83,7 @@ export function useIdentity(): Session {
   const { wallets, ready: walletsReady } = useWallets();
   const { createWallet } = useCreateWallet();
   const creatingWallet = useRef(false);
-  const [xmtp, setXmtp] = useState<Client | null>(null);
+  const [xmtp, setXmtp] = useState<XmtpClient | null>(null);
   const [error, setError] = useState<string>();
   const [payoutOverride, setPayoutOverride] = useState<string | null>(null);
 
