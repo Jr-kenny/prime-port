@@ -1,16 +1,15 @@
 // The freelancer web app, transcribed screen-for-screen from
 // docs/design/prime-port-prototype.html sections 2a-2f (the 1a "Direct"
 // language, per issue #14). Markup order and style values follow the
-// prototype; data comes from the live backend instead of the prototype's
-// fixtures. Anything local-only (chat delivery) says so on screen.
-import { useEffect, useMemo, useState } from "react";
+// prototype; data comes from the live backend, identity from the embedded
+// wallet (identity.ts), and chat rides the real XMTP transport.
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { claimJob, getProfile, listJobs } from "./api";
+import { useLoginWithEmail, useLoginWithOAuth } from "@privy-io/react-auth";
+import { claimJob, countersignHire, getProfile, listJobs } from "./api";
 import type { FreelancerProfile, PublicJob } from "./api";
-import { clearIdentity, createIdentity, readIdentity, savePayoutAddress, shortAddr } from "./identity";
-import type { Identity } from "./identity";
-import { appendMessage, readClaims, readMessages, saveClaim } from "./storage";
-import type { ChatMessage, ClaimRecord } from "./storage";
+import { shortAddr, useIdentity } from "./identity";
+import type { Session } from "./identity";
 import { CAT_COLORS, HERO_CHIPS, MONO, BODY, SAFETY, STEPS, siteStyles, siteThemeFor } from "./theme";
 import type { SiteTheme } from "./theme";
 import { GoogleIcon, Logo, ThemeIcon } from "./Logo";
@@ -54,12 +53,16 @@ const fmtDeadline = (deadline: number) => {
 const fmtBudget = (job: PublicJob) => `${job.price} ${job.currency}`;
 const fmtTime = (at: number) => new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(at));
 
+// A job the signed-in freelancer has claimed, derived entirely from the
+// server's jobs list, so claims follow the identity across devices.
+type ClaimView = { jobId: string; portInboxId: string; claimedAt: number };
+
 export function App() {
   const [route, setRoute] = useState<Route>(parseRoute);
   const [dark, setDark] = useState(() => window.localStorage.getItem("prime-port.theme") === "dark");
   const [jobs, setJobs] = useState<PublicJob[]>([]);
-  const [identity, setIdentity] = useState<Identity | null>(readIdentity);
-  const [claims, setClaims] = useState<ClaimRecord[]>(readClaims);
+  const session = useIdentity();
+  const identity = session.identity;
 
   const t = siteThemeFor(dark);
   const s = useMemo(() => siteStyles(t), [dark]);
@@ -76,9 +79,23 @@ export function App() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
+  const refreshJobs = () => listJobs().then(setJobs).catch(() => {});
+
   useEffect(() => {
     listJobs().then(setJobs).catch(() => setJobs([]));
   }, [route.name]);
+
+  const claims = useMemo<ClaimView[]>(() => {
+    if (!identity) return [];
+    return jobs
+      .filter((j) => j.claims.some((c) => c.inboxId === identity.inboxId))
+      .map((j) => ({
+        jobId: j.jobId,
+        portInboxId: j.port.inboxId,
+        claimedAt: j.claims.find((c) => c.inboxId === identity.inboxId)!.claimedAt,
+      }))
+      .sort((a, b) => b.claimedAt - a.claimedAt);
+  }, [jobs, identity?.inboxId]);
 
   const toggleDark = () => {
     const next = !dark;
@@ -86,7 +103,7 @@ export function App() {
     window.localStorage.setItem("prime-port.theme", next ? "dark" : "light");
   };
 
-  const shared = { t, s, dark, toggleDark, navigate, jobs, identity, claims, setClaims, setIdentity };
+  const shared = { t, s, dark, toggleDark, navigate, jobs, refreshJobs, session, identity, claims };
 
   if (route.name === "chat") return <ChatScreen {...shared} activeJobId={route.jobId} />;
   return (
@@ -108,10 +125,10 @@ type Shared = {
   toggleDark: () => void;
   navigate: (path: string) => void;
   jobs: PublicJob[];
-  identity: Identity | null;
-  claims: ClaimRecord[];
-  setClaims: (c: ClaimRecord[]) => void;
-  setIdentity: (i: Identity | null) => void;
+  refreshJobs: () => Promise<void>;
+  session: Session;
+  identity: Session["identity"];
+  claims: ClaimView[];
 };
 
 function Nav({ t, s, dark, toggleDark, navigate, route, identity }: Shared & { route: Route }) {
@@ -340,7 +357,7 @@ function JobDetail({ t, s, navigate, jobs, jobId, identity, claims }: Shared & {
             ) : claimed ? (
               <button style={s.jobDetailClaimBtn} onClick={() => navigate(`/chat/${job.jobId}`)}>Open the chat →</button>
             ) : (
-              <button style={s.jobDetailClaimBtn} onClick={() => navigate(identity ? `/signin?job=${job.jobId}` : `/signin?job=${job.jobId}`)}>Claim this job</button>
+              <button style={s.jobDetailClaimBtn} onClick={() => navigate(`/signin?job=${job.jobId}`)}>Claim this job</button>
             )}
             <div style={s.jobDetailFoot}>No crypto experience needed. We set up secure payment for you.</div>
           </div>
@@ -350,85 +367,221 @@ function JobDetail({ t, s, navigate, jobs, jobId, identity, claims }: Shared & {
   );
 }
 
-// 2e: sign in. Until Privy lands (#17) this creates the local preview
-// identity, and says so in the footnote instead of pretending.
-function SignIn({ t, s, navigate, jobs, jobId, identity, setIdentity, setClaims }: Shared & { jobId?: string }) {
+// 2e: sign in. Privy under the prototype's own card: Google is a headless
+// OAuth redirect, email is a one-time code. Once the session is ready (wallet
+// created, XMTP inbox registered) the pending claim fires automatically, so
+// the OAuth round-trip back to /signin?job=… resumes exactly where it left.
+function SignIn({ t, s, navigate, jobs, jobId, session, refreshJobs }: Shared & { jobId?: string }) {
   const job = jobId ? jobs.find((j) => j.jobId === jobId) : undefined;
-  const [email, setEmail] = useState(identity?.email ?? "");
-  const [name, setName] = useState(identity?.name ?? "");
-  const [busy, setBusy] = useState(false);
+  const { sendCode, loginWithCode, state: emailState } = useLoginWithEmail();
+  const { initOAuth } = useLoginWithOAuth();
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
   const [error, setError] = useState("");
+  const [claiming, setClaiming] = useState(false);
+  const claimStarted = useRef(false);
 
-  const finish = async (id: Identity) => {
-    setIdentity(id);
-    if (job) {
-      const res = await claimJob(job.jobId, { inboxId: id.inboxId, wallet: id.wallet, payoutAddress: id.payoutAddress, name: id.name });
-      setClaims(saveClaim({ jobId: job.jobId, portInboxId: res.portInboxId, claimedAt: Date.now() }));
-      navigate(`/chat/${job.jobId}`);
-    } else {
-      navigate("/jobs");
-    }
-  };
+  const codeStage = ["awaiting-code-input", "submitting-code"].includes(emailState.status);
+  const busy = ["sending-code", "submitting-code"].includes(emailState.status);
+  const settingUp = session.status === "connecting" || claiming;
 
-  const submit = async (e: FormEvent) => {
+  useEffect(() => {
+    // Runs for every way a session becomes ready on this screen: email code,
+    // OAuth return, or arriving already signed in via a job's claim button.
+    if (session.status !== "ready" || claimStarted.current) return;
+    if (jobId && !job) return; // jobs list still loading, wait for it
+    claimStarted.current = true;
+    (async () => {
+      try {
+        if (job) {
+          setClaiming(true);
+          const id = session.identity!;
+          if (job.status !== "open" && !job.claims.some((c) => c.inboxId === id.inboxId)) {
+            throw new Error(`this job is ${job.status.replaceAll("-", " ")}, claims are closed`);
+          }
+          if (!job.claims.some((c) => c.inboxId === id.inboxId)) {
+            await claimJob(job.jobId, { inboxId: id.inboxId, wallet: id.wallet, payoutAddress: id.payoutAddress, name: id.name });
+          }
+          await refreshJobs();
+          navigate(`/chat/${job.jobId}`);
+        } else {
+          navigate("/jobs");
+        }
+      } catch (err) {
+        setError((err as Error).message);
+        setClaiming(false);
+        claimStarted.current = false;
+      }
+    })();
+  }, [session.status, job?.jobId, jobId]);
+
+  const submitEmail = async (e: FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) return;
-    setBusy(true);
     setError("");
     try {
-      await finish(createIdentity({ name: name.trim() || email.split("@")[0], email }));
+      if (codeStage) {
+        if (!code.trim()) return;
+        await loginWithCode({ code: code.trim() });
+      } else {
+        if (!email.trim()) return;
+        await sendCode({ email: email.trim() });
+      }
     } catch (err) {
       setError((err as Error).message);
-    } finally {
-      setBusy(false);
     }
   };
 
   return (
     <div style={s.signinWrap}>
-      <form style={s.signinCard} onSubmit={submit}>
+      <form style={s.signinCard} onSubmit={submitEmail}>
         <div style={s.signinKicker}>{job ? "Claiming" : "Sign in"}</div>
         <h1 style={s.signinTitle}>{job ? `"${job.title}"` : "Welcome to Prime Port"}</h1>
         <p style={s.signinSub}>{job ? "Sign in to open a private chat with the agent hiring for this job." : "Sign in to claim jobs and talk to hiring agents."}</p>
 
-        <button type="button" style={{ ...s.signinBtn, opacity: 0.55, cursor: "not-allowed" }} title="Google sign-in arrives with the embedded wallet (#17)" disabled>
-          <GoogleIcon />
-          Continue with Google
-        </button>
-        <input style={s.signinInput} type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" />
-        <input style={s.signinInput} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
-        <button type="submit" style={s.signinBtnAlt} disabled={busy}>
-          {busy ? "Setting up…" : "@ Continue with email"}
-        </button>
-        {error && <p style={{ ...s.signinFoot, color: "#c73a3a", marginTop: 4 }}>{error}</p>}
+        {settingUp ? (
+          <p style={{ ...s.signinSub, margin: "8px 0" }}>
+            {claiming ? "Claiming the job…" : "Setting up your secure wallet and inbox…"}
+          </p>
+        ) : (
+          <>
+            <button type="button" style={s.signinBtn} onClick={() => { setError(""); initOAuth({ provider: "google" }).catch((err) => setError((err as Error).message)); }}>
+              <GoogleIcon />
+              Continue with Google
+            </button>
+            {codeStage ? (
+              <>
+                <input style={s.signinInput} inputMode="numeric" autoFocus value={code} onChange={(e) => setCode(e.target.value)} placeholder="6-digit code" />
+                <button type="submit" style={s.signinBtnAlt} disabled={busy}>
+                  {busy ? "Checking…" : "Verify code"}
+                </button>
+                <p style={s.signinFoot}>We emailed a one-time code to {email}.</p>
+              </>
+            ) : (
+              <>
+                <input style={s.signinInput} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+                <button type="submit" style={s.signinBtnAlt} disabled={busy}>
+                  {busy ? "Sending code…" : "@ Continue with email"}
+                </button>
+              </>
+            )}
+          </>
+        )}
+        {(error || session.error) && <p style={{ ...s.signinFoot, color: "#c73a3a", marginTop: 4 }}>{error || session.error}</p>}
 
         <p style={s.signinFoot}>
           By continuing you get a secure payout wallet automatically, no seed phrases, no crypto knowledge required. You can change your payout address later.
-          <br /><br />
-          Preview build: this sign-in is local to your browser while the real embedded-wallet login (Google included) ships with #17.
         </p>
       </form>
     </div>
   );
 }
 
-// 2d: chat, split-pane like a desktop messenger.
+// 2d: chat, split-pane like a desktop messenger. The conversation is a real
+// XMTP DM with the job's port inbox: what the agent's negotiate sends shows
+// up here, and what's typed here lands in the agent's get_offers.
+type PortMessage = { id: string; text: string; mine: boolean; at: number };
+
+// The exact string both wallets personal_sign over a hire; must match
+// signingMessage() in backend/commitment/commitment.mjs.
+const hireSigningMessage = (hash: string) => `Prime Port hire commitment v1: ${hash}`;
+
 function ChatScreen(props: Shared & { activeJobId?: string }) {
-  const { t, s, dark, toggleDark, navigate, jobs, claims, activeJobId } = props;
+  const { t, s, dark, toggleDark, navigate, jobs, claims, session, identity, refreshJobs, activeJobId } = props;
   const active = activeJobId ?? claims[0]?.jobId;
   const activeJob = jobs.find((j) => j.jobId === active);
+  const activeClaim = claims.find((c) => c.jobId === active);
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>(() => (active ? readMessages(active) : []));
+  const [messages, setMessages] = useState<PortMessage[]>([]);
+  const [transportError, setTransportError] = useState("");
+  const [signing, setSigning] = useState(false);
+  const [signError, setSignError] = useState("");
+  const dmRef = useRef<Awaited<ReturnType<NonNullable<Session["xmtp"]>["conversations"]["newDm"]>> | null>(null);
 
   useEffect(() => {
-    setMessages(active ? readMessages(active) : []);
-  }, [active]);
+    const xmtp = session.xmtp;
+    if (!xmtp || !activeClaim) return;
+    let stopped = false;
+    setMessages([]);
+    setTransportError("");
+    dmRef.current = null;
+    const refresh = async () => {
+      const dm = dmRef.current;
+      if (!dm) return;
+      await dm.sync();
+      const msgs = await dm.messages();
+      if (stopped) return;
+      setMessages(
+        msgs
+          .filter((m) => typeof m.content === "string")
+          .map((m) => ({
+            id: m.id,
+            text: m.content as string,
+            mine: m.senderInboxId === xmtp.inboxId,
+            at: Number(m.sentAtNs / 1_000_000n),
+          })),
+      );
+    };
+    (async () => {
+      try {
+        dmRef.current = await xmtp.conversations.newDm(activeClaim.portInboxId);
+        await refresh();
+      } catch (e) {
+        if (!stopped) setTransportError((e as Error).message);
+      }
+    })();
+    const timer = setInterval(() => {
+      refresh().catch((e) => !stopped && setTransportError((e as Error).message));
+      refreshJobs(); // pick up hire-state changes while the chat is open
+    }, 4000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [session.xmtp, activeClaim?.portInboxId]);
 
-  const send = (e: FormEvent) => {
+  const send = async (e: FormEvent) => {
     e.preventDefault();
-    if (!draft.trim() || !active) return;
-    setMessages(appendMessage({ id: crypto.randomUUID(), jobId: active, from: "me", text: draft.trim(), at: Date.now() }));
+    const text = draft.trim();
+    const dm = dmRef.current;
+    if (!text || !dm) return;
     setDraft("");
+    try {
+      await dm.send(text);
+      await dm.sync();
+      const msgs = await dm.messages();
+      setMessages(
+        msgs
+          .filter((m) => typeof m.content === "string")
+          .map((m) => ({ id: m.id, text: m.content as string, mine: m.senderInboxId === session.xmtp!.inboxId, at: Number(m.sentAtNs / 1_000_000n) })),
+      );
+    } catch (err) {
+      setTransportError((err as Error).message);
+    }
+  };
+
+  // The hire moment: the agent signed first, the freelancer countersigns here
+  // and escrow locks. Only shown to the wallet the commitment names.
+  const pendingHire =
+    activeJob?.status === "awaiting-freelancer-signature" &&
+    activeJob.pendingHire &&
+    identity &&
+    activeJob.pendingHire.commitment.freelancer.wallet === identity.wallet
+      ? activeJob.pendingHire
+      : null;
+
+  const countersign = async () => {
+    if (!pendingHire || !activeJob) return;
+    setSigning(true);
+    setSignError("");
+    try {
+      const signature = await session.signMessage(hireSigningMessage(pendingHire.hash));
+      await countersignHire(activeJob.jobId, signature);
+      await refreshJobs();
+    } catch (err) {
+      setSignError((err as Error).message);
+    } finally {
+      setSigning(false);
+    }
   };
 
   const statusLabel = (job?: PublicJob) =>
@@ -463,7 +616,7 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
             {claims.map((claim) => {
               const job = jobs.find((j) => j.jobId === claim.jobId);
               const isActive = claim.jobId === active;
-              const last = readMessages(claim.jobId).at(-1);
+              const last = isActive ? messages.at(-1) : undefined;
               return (
                 <div
                   key={claim.jobId}
@@ -476,7 +629,7 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
                       <span style={s.dchatThreadName}>{job?.title ?? claim.jobId}</span>
                       <span style={s.dchatThreadTime}>{last ? fmtTime(last.at) : ""}</span>
                     </div>
-                    <span style={s.dchatThreadPreview}>{last ? `You: ${last.text.slice(0, 38)}` : statusLabel(job) || "Claimed"}</span>
+                    <span style={s.dchatThreadPreview}>{last ? `${last.mine ? "You: " : ""}${last.text.slice(0, 38)}` : statusLabel(job) || "Claimed"}</span>
                   </div>
                 </div>
               );
@@ -503,10 +656,40 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
                 <button style={s.dchatViewJobLink} onClick={() => navigate(`/jobs/${activeJob.jobId}`)}>View job details →</button>
               </div>
               <div style={s.dchatScroll}>
-                <div style={s.dchatSysMsg}>Preview: messages stay on this device until live delivery ships with the embedded wallet (#17).</div>
+                <div style={s.dchatSysMsg}>
+                  {transportError
+                    ? `Connection problem: ${transportError}`
+                    : session.status !== "ready"
+                      ? "Connecting your inbox…"
+                      : "Private port · end-to-end over XMTP. Only you and this job's agent can read it."}
+                </div>
+                {pendingHire && (
+                  <div style={{ alignSelf: "center", maxWidth: 420, display: "flex", flexDirection: "column", gap: 10, background: t.accentSoft, border: `1px solid ${t.accent}`, borderRadius: 14, padding: "14px 18px", textAlign: "center" }}>
+                    <span style={{ font: `700 14px ${BODY}`, color: t.ink }}>The agent signed a hire commitment · {fmtBudget(activeJob)}</span>
+                    <span style={{ font: `400 13px/1.5 ${BODY}`, color: t.muted }}>
+                      Countersign to accept. Escrow locks the moment you do, and payment goes to {shortAddr(identity?.payoutAddress ?? "")}.
+                    </span>
+                    <button
+                      style={{ background: t.accent, color: "#fff", border: "none", borderRadius: 10, padding: "10px 16px", font: `700 14px ${BODY}`, cursor: signing ? "wait" : "pointer" }}
+                      onClick={countersign}
+                      disabled={signing}
+                    >
+                      {signing ? "Signing…" : "Accept & sign"}
+                    </button>
+                    {signError && <span style={{ font: `400 12px ${BODY}`, color: "#c73a3a" }}>{signError}</span>}
+                  </div>
+                )}
                 {messages.map((m) => (
-                  <div key={m.id} style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <div style={{ maxWidth: "60%", padding: "12px 16px", borderRadius: 14, font: `400 14px/1.5 ${BODY}`, background: t.accent, color: "#fff" }}>{m.text}</div>
+                  <div key={m.id} style={{ display: "flex", justifyContent: m.mine ? "flex-end" : "flex-start" }}>
+                    <div
+                      style={
+                        m.mine
+                          ? { maxWidth: "60%", padding: "12px 16px", borderRadius: 14, font: `400 14px/1.5 ${BODY}`, background: t.accent, color: "#fff" }
+                          : { maxWidth: "60%", padding: "12px 16px", borderRadius: 14, font: `400 14px/1.5 ${BODY}`, background: t.cardBg, border: `1px solid ${t.border}`, color: t.ink }
+                      }
+                    >
+                      {m.text}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -519,8 +702,17 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
             </>
           ) : (
             <div style={s.dchatEmpty}>
-              <span>Select a conversation, or claim a job to start one.</span>
-              <button style={{ ...s.dchatViewJobLink, marginLeft: 0 }} onClick={() => navigate("/jobs")}>Browse open jobs →</button>
+              {session.status === "signed-out" ? (
+                <>
+                  <span>Sign in to see your conversations.</span>
+                  <button style={{ ...s.dchatViewJobLink, marginLeft: 0 }} onClick={() => navigate("/signin")}>Go to sign in →</button>
+                </>
+              ) : (
+                <>
+                  <span>Select a conversation, or claim a job to start one.</span>
+                  <button style={{ ...s.dchatViewJobLink, marginLeft: 0 }} onClick={() => navigate("/jobs")}>Browse open jobs →</button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -531,7 +723,7 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
 
 // 2f: settings, identity + wallet. Stats come from the real reputation
 // endpoint (#16); a fresh identity honestly shows zero history.
-function Settings({ t, s, navigate, identity, setIdentity, claims }: Shared) {
+function Settings({ t, s, navigate, session, identity, claims }: Shared) {
   const [profile, setProfile] = useState<FreelancerProfile | null>(null);
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideValue, setOverrideValue] = useState("");
@@ -544,8 +736,12 @@ function Settings({ t, s, navigate, identity, setIdentity, claims }: Shared) {
     return (
       <div style={s.signinWrap}>
         <div style={s.signinCard}>
-          <p style={{ ...s.signinSub, margin: 0 }}>Sign in first to see your identity and wallet.</p>
-          <button style={s.signinBtn} onClick={() => navigate("/signin")}>Go to sign in</button>
+          <p style={{ ...s.signinSub, margin: 0 }}>
+            {session.status === "connecting" ? "Setting up your secure wallet and inbox…" : "Sign in first to see your identity and wallet."}
+          </p>
+          {session.status !== "connecting" && (
+            <button style={s.signinBtn} onClick={() => navigate("/signin")}>Go to sign in</button>
+          )}
         </div>
       </div>
     );
@@ -556,8 +752,7 @@ function Settings({ t, s, navigate, identity, setIdentity, claims }: Shared) {
 
   const saveOverride = () => {
     if (/^0x[0-9a-fA-F]{40}$/.test(overrideValue)) {
-      const next = savePayoutAddress(overrideValue.toLowerCase());
-      if (next) setIdentity(next);
+      session.setPayoutAddress(overrideValue);
       setOverrideOpen(false);
       setOverrideValue("");
     }
@@ -573,7 +768,7 @@ function Settings({ t, s, navigate, identity, setIdentity, claims }: Shared) {
           <div style={s.setAvatar}>{initials}</div>
           <div style={s.setIdentityMeta}>
             <span style={s.setIdentityName}>{identity.email}</span>
-            <span style={s.setIdentitySub}>Signed in with email (preview build, embedded wallet lands with #17)</span>
+            <span style={s.setIdentitySub}>Signed in with {identity.provider === "google" ? "Google" : "email"} · secure embedded wallet, no seed phrase</span>
           </div>
         </div>
         <div style={s.setIdentityStatsRow}>
@@ -612,7 +807,7 @@ function Settings({ t, s, navigate, identity, setIdentity, claims }: Shared) {
         <div style={s.setCardHead}>Payout wallet</div>
         <div style={s.setWalletRow}>
           <span style={s.setWalletAddr}>{shortAddr(identity.payoutAddress)}</span>
-          <span style={s.setWalletTag}>{identity.payoutAddress === identity.wallet.toLowerCase() || identity.payoutAddress === identity.wallet ? "Default · auto-created" : "Custom"}</span>
+          <span style={s.setWalletTag}>{identity.payoutAddress === identity.wallet ? "Default · auto-created" : "Custom"}</span>
         </div>
         <p style={s.setWalletHint}>This is where your payments land by default. You can send funds to a different address instead when you're hired for a job.</p>
         <button style={s.setOverrideBtn} onClick={() => setOverrideOpen(!overrideOpen)}>{overrideOpen ? "Cancel" : "Use a different address"}</button>
@@ -638,7 +833,7 @@ function Settings({ t, s, navigate, identity, setIdentity, claims }: Shared) {
         ))}
       </div>
 
-      <button style={{ ...s.setOverrideBtn, alignSelf: "flex-start" }} onClick={() => { clearIdentity(); setIdentity(null); navigate("/"); }}>
+      <button style={{ ...s.setOverrideBtn, alignSelf: "flex-start" }} onClick={() => session.signOut().then(() => navigate("/"))}>
         Sign out
       </button>
     </div>
