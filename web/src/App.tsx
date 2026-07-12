@@ -588,8 +588,11 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
     }
   };
 
+  // Past the claim stage the negotiated commitment price is the truth, not the listing price.
+  const dealPrice = (job: PublicJob) =>
+    job.pendingHire ? `${job.pendingHire.commitment.price} ${job.pendingHire.commitment.currency}` : fmtBudget(job);
   const statusLabel = (job?: PublicJob) =>
-    !job ? "" : job.status === "open" ? "Negotiating" : job.status === "hired" || job.status === "approved" ? `Escrow locked · ${fmtBudget(job)}` : job.status === "settled" ? `Paid · ${fmtBudget(job)} released` : "Awaiting signatures";
+    !job ? "" : job.status === "open" ? "Negotiating" : job.status === "hired" || job.status === "approved" ? `Escrow locked · ${dealPrice(job)}` : job.status === "settled" ? `Paid · ${dealPrice(job)} released` : "Awaiting signatures";
 
   return (
     <div style={s.dchatPage}>
@@ -633,7 +636,7 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
                       <span style={s.dchatThreadName}>{job?.title ?? claim.jobId}</span>
                       <span style={s.dchatThreadTime}>{last ? fmtTime(last.at) : ""}</span>
                     </div>
-                    <span style={s.dchatThreadPreview}>{last ? `${last.mine ? "You: " : ""}${last.text.slice(0, 38)}` : statusLabel(job) || "Claimed"}</span>
+                    <span style={s.dchatThreadPreview}>{last ? `${last.mine ? "You: " : ""}${last.text.slice(0, 38)}` : statusLabel(job) || "Applied"}</span>
                   </div>
                 </div>
               );
@@ -669,7 +672,7 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
                 </div>
                 {pendingHire && (
                   <div style={{ alignSelf: "center", maxWidth: 420, display: "flex", flexDirection: "column", gap: 10, background: t.accentSoft, border: `1px solid ${t.accent}`, borderRadius: 14, padding: "14px 18px", textAlign: "center" }}>
-                    <span style={{ font: `700 14px ${BODY}`, color: t.ink }}>The agent signed a hire commitment · {fmtBudget(activeJob)}</span>
+                    <span style={{ font: `700 14px ${BODY}`, color: t.ink }}>The agent signed a hire commitment · {pendingHire.commitment.price} {pendingHire.commitment.currency}</span>
                     <span style={{ font: `400 13px/1.5 ${BODY}`, color: t.muted }}>
                       Countersign to accept. Escrow locks the moment you do, and payment goes to {shortAddr(identity?.payoutAddress ?? "")}.
                     </span>
@@ -727,7 +730,7 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
 
 // 2f: settings, identity + wallet. Stats come from the real reputation
 // endpoint (#16); a fresh identity honestly shows zero history.
-function Settings({ t, s, navigate, session, identity, claims }: Shared) {
+function Settings({ t, s, navigate, session, identity, claims, jobs }: Shared) {
   const [profile, setProfile] = useState<FreelancerProfile | null>(null);
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideValue, setOverrideValue] = useState("");
@@ -753,6 +756,21 @@ function Settings({ t, s, navigate, session, identity, claims }: Shared) {
 
   const rating = profile?.avgStars ?? null;
   const initials = identity.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "PP";
+
+  // A job is mine past the claim stage only if the hire commitment names me.
+  const hiredMe = (job?: PublicJob) => job?.pendingHire?.commitment.freelancer.inboxId === identity.inboxId;
+  const commitPrice = (job: PublicJob) => `${job.pendingHire!.commitment.price} ${job.pendingHire!.commitment.currency}`;
+  const settledEarnings = jobs
+    .filter((j) => j.status === "settled" && hiredMe(j))
+    .reduce((sum, j) => sum + Number(j.pendingHire!.commitment.price), 0);
+
+  const historyFor = (job?: PublicJob): { label: string; strong?: boolean } => {
+    if (!job || job.status === "open" || job.status === "hiring") return { label: "Applied" };
+    if (!hiredMe(job)) return { label: "Filled" };
+    if (job.status === "awaiting-freelancer-signature") return { label: "Awaiting your signature", strong: true };
+    if (job.status === "settled") return { label: `Paid · ${commitPrice(job)}`, strong: true };
+    return { label: `Escrow locked · ${commitPrice(job)}`, strong: true };
+  };
 
   const saveOverride = () => {
     if (/^0x[0-9a-fA-F]{40}$/.test(overrideValue)) {
@@ -804,6 +822,14 @@ function Settings({ t, s, navigate, session, identity, claims }: Shared) {
           </div>
           <button style={{ ...s.setWithdrawBtn, opacity: 0.55, cursor: "not-allowed" }} disabled title="Withdrawals arrive with the payment lane">Withdraw</button>
         </div>
+        {settledEarnings > 0 && (
+          <div style={s.setBalanceRow}>
+            <div style={s.setBalanceMain}>
+              <span style={s.setBalanceLabel}>Settled earnings</span>
+              <span style={s.setBalanceVal}>{settledEarnings} USDT</span>
+            </div>
+          </div>
+        )}
         <div style={s.setPendingNote}>Payments land here once escrow and payouts are wired to the marketplace.</div>
       </div>
 
@@ -825,16 +851,20 @@ function Settings({ t, s, navigate, session, identity, claims }: Shared) {
 
       <div style={s.setCard}>
         <div style={s.setCardHead}>Payment history</div>
-        {claims.length === 0 && <span style={s.setHistoryDate}>Nothing yet. Claimed jobs and payouts show up here.</span>}
-        {claims.map((c) => (
-          <div key={c.jobId} style={s.setHistoryRow}>
-            <div style={s.setHistoryMain}>
-              <span style={s.setHistoryTitle}>{c.jobId}</span>
-              <span style={s.setHistoryDate}>{new Date(c.claimedAt).toLocaleDateString()}</span>
+        {claims.length === 0 && <span style={s.setHistoryDate}>Nothing yet. Jobs you apply for and payouts show up here.</span>}
+        {claims.map((c) => {
+          const job = jobs.find((j) => j.jobId === c.jobId);
+          const h = historyFor(job);
+          return (
+            <div key={c.jobId} style={s.setHistoryRow}>
+              <div style={s.setHistoryMain}>
+                <span style={s.setHistoryTitle}>{job?.title ?? c.jobId}</span>
+                <span style={s.setHistoryDate}>{new Date(c.claimedAt).toLocaleDateString()}</span>
+              </div>
+              <span style={{ font: `600 12.5px ${BODY}`, color: h.strong ? t.accent : t.muted }}>{h.label}</span>
             </div>
-            <span style={{ font: `600 12.5px ${BODY}`, color: t.muted }}>Claimed</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <button style={{ ...s.setOverrideBtn, alignSelf: "flex-start" }} onClick={() => session.signOut().then(() => navigate("/"))}>
