@@ -440,7 +440,11 @@ function SignIn({ t, s, navigate, jobs, jobId, session, refreshJobs }: Shared & 
 
         {settingUp ? (
           <p style={{ ...s.signinSub, margin: "8px 0" }}>
-            {claiming ? "Claiming the job…" : "Setting up your secure wallet and inbox…"}
+            {claiming
+              ? "Claiming the job…"
+              : session.stage === "wallet"
+                ? "Creating your secure wallet…"
+                : "Registering your inbox… first sign-in takes a few seconds."}
           </p>
         ) : (
           <>

@@ -3,8 +3,8 @@
 // inboxId is a real reachable inbox, and the same signing path countersigns
 // the hire commitment. No key ever touches this code: signing happens inside
 // Privy's wallet iframe, we only ever see signatures.
-import { useEffect, useState } from "react";
-import { useLogout, usePrivy, useWallets } from "@privy-io/react-auth";
+import { useEffect, useRef, useState } from "react";
+import { useCreateWallet, useLogout, usePrivy, useWallets } from "@privy-io/react-auth";
 import type { ConnectedWallet } from "@privy-io/react-auth";
 import { Client } from "@xmtp/browser-sdk";
 import { toBytes } from "viem";
@@ -22,6 +22,8 @@ export type Session = {
   // loading: Privy still booting. connecting: signed in, wallet/XMTP being
   // set up. ready: identity usable for claims, chat and countersigning.
   status: "loading" | "signed-out" | "connecting" | "ready" | "error";
+  // While connecting: which arrow of the chain we're waiting on.
+  stage?: "wallet" | "inbox";
   error?: string;
   identity: Identity | null;
   xmtp: Client | null;
@@ -56,9 +58,13 @@ function xmtpFor(wallet: ConnectedWallet): Promise<Client> {
       getIdentifier: () => ({ identifier: address, identifierKind: "Ethereum" as const }),
       signMessage: async (message: string) => toBytes(await personalSign(wallet, message)),
     };
+    const started = Date.now();
     cached = Client.create(signer, { env: XMTP_ENV });
     xmtpCache.set(address, cached);
-    cached.catch(() => xmtpCache.delete(address));
+    cached.then(
+      (c) => console.info(`[identity] xmtp inbox ${c.inboxId} ready in ${Date.now() - started}ms`),
+      () => xmtpCache.delete(address),
+    );
   }
   return cached;
 }
@@ -66,13 +72,31 @@ function xmtpFor(wallet: ConnectedWallet): Promise<Client> {
 export function useIdentity(): Session {
   const { ready, authenticated, user } = usePrivy();
   const { logout } = useLogout();
-  const { wallets } = useWallets();
+  const { wallets, ready: walletsReady } = useWallets();
+  const { createWallet } = useCreateWallet();
+  const creatingWallet = useRef(false);
   const [xmtp, setXmtp] = useState<Client | null>(null);
   const [error, setError] = useState<string>();
   const [payoutOverride, setPayoutOverride] = useState<string | null>(null);
 
   const embedded = wallets.find((w) => w.walletClientType === "privy");
   const walletAddr = embedded?.address.toLowerCase();
+
+  // createOnLogin only fires during an actual login event. A user whose Privy
+  // account already exists but never finished wallet creation (interrupted
+  // first visit, session restored from another tab) would otherwise wait here
+  // forever, so if the wallet list settles without an embedded wallet, ask
+  // for one explicitly.
+  useEffect(() => {
+    if (!ready || !authenticated || !walletsReady || embedded || creatingWallet.current) return;
+    creatingWallet.current = true;
+    console.info("[identity] no embedded wallet after login, creating one");
+    createWallet().catch((e) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      // "already has an embedded wallet" means it's about to surface via useWallets
+      if (!/already has/i.test(msg)) setError(msg);
+    });
+  }, [ready, authenticated, walletsReady, walletAddr]);
 
   useEffect(() => {
     if (!ready || !authenticated || !embedded) return;
@@ -102,6 +126,7 @@ export function useIdentity(): Session {
 
   return {
     status: !ready ? "loading" : !authenticated ? "signed-out" : error ? "error" : identity ? "ready" : "connecting",
+    stage: !embedded ? "wallet" : "inbox",
     error,
     identity,
     xmtp,
