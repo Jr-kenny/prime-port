@@ -18,7 +18,10 @@ const run = promisify(execFile);
 //     https://user:hf_xxx@huggingface.co/datasets/<user>/prime-port-state
 //   GitHub (fine-grained PAT, contents read/write):
 //     https://x-access-token:ghp_xxx@github.com/<user>/prime-port-state.git
-const REMOTE = process.env.STATE_REMOTE;
+// Dashboard paste boxes love to smuggle newlines into long URLs, and git
+// then reports "url contains a newline"; a git URL never has whitespace,
+// so strip all of it.
+const REMOTE = process.env.STATE_REMOTE?.replace(/\s+/g, "") || undefined;
 const EVERY_MS = Number(process.env.BACKUP_EVERY_MS ?? 5 * 60_000);
 const MIRROR = new URL("./.state-mirror/", import.meta.url).pathname;
 const DIRS = [
