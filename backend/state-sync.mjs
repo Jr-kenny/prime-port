@@ -10,7 +10,7 @@
 // allows.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 
 const run = promisify(execFile);
 // Full https git URL with the credential embedded. Works with any git host:
@@ -44,8 +44,10 @@ export async function restoreState() {
   rmSync(MIRROR, { recursive: true, force: true });
   try {
     await run("git", ["clone", "--depth", "1", REMOTE, MIRROR]);
-  } catch {
-    console.error("[state-sync] clone failed, starting empty (first run, or check STATE_REMOTE)");
+  } catch (e) {
+    // Redact the credential-bearing remote before logging the git error.
+    const reason = String(e.message ?? e).replace(REMOTE, remoteHost()).split("\n").slice(0, 3).join(" | ");
+    console.error(`[state-sync] clone failed, starting empty: ${reason}`);
     mkdirSync(MIRROR, { recursive: true });
     await git(["init", "-b", "main"]);
     await git(["remote", "add", "origin", REMOTE]);
