@@ -1,13 +1,13 @@
-# Free Hugging Face Spaces go to sleep after ~48h without traffic. A ping
-# every 6 hours keeps the backend warm; it also doubles as a liveness check
-# (the run fails loudly in the Actions tab if the Space stops answering).
-# Set the SPACE_URL repository variable to the Space's direct URL, e.g.
-# https://<user>-prime-port.hf.space
-name: keep space awake
+# Render's free instances spin down after ~15 idle minutes, so this pings
+# every 10 (GitHub cron is best-effort; occasional cold starts of ~1 min are
+# the accepted cost). It also doubles as a liveness alarm: the run fails
+# loudly in the Actions tab if the backend stops answering. Set the
+# SPACE_URL repository variable to the deployed URL.
+name: keep backend awake
 
 on:
   schedule:
-    - cron: "17 */6 * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 jobs:

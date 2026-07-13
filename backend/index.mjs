@@ -14,7 +14,9 @@ import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { restoreState, startBackupLoop } from "./state-sync.mjs";
 
-const APP_PORT = Number(process.env.APP_PORT ?? 7860);
+// The public port: APP_PORT if set, else the host-assigned PORT (Render
+// injects one and routes traffic to it), else 7860 (Hugging Face style).
+const APP_PORT = Number(process.env.APP_PORT ?? process.env.PORT ?? 7860);
 
 // Each service reads process.env.PORT with its own fallback (8791 / 8792).
 // Clearing PORT before import lets both fall back and the proxy own APP_PORT.
