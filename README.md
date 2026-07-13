@@ -10,6 +10,19 @@ Full architecture, lifecycle, and confirmed protocol facts live in [docs/BRIEF.m
 
 Deadline: **July 17, 2026**. Team of 4.
 
+## What's live right now
+
+| Piece | Where | Status |
+|---|---|---|
+| Web app (job board, claim flow, freelancer chat) | [prime-port-tau.vercel.app](https://prime-port-tau.vercel.app) | live |
+| Backend (port service, MCP server, REST, state backups) | [prime-port-latest.onrender.com](https://prime-port-latest.onrender.com) | live |
+| Marketplace watcher (OKX vending verbs) | operator's machine, welded to the Render backend | live while the machine is awake |
+| Auto-post fan-out (X + Telegram) | not deployed yet | coming in a later pass |
+
+The web app talks to the backend through its own `/api` path (Vercel rewrites it server-side to Render), so there are no cross-origin hoops and the backend URL never appears in browser code. The watcher runs where the OKX agent identity lives; today that identity can only exist on the machine that did the email login, which is why it isn't in the cloud container yet.
+
+In plain terms: the shopfront and the shop both live on the internet and are open now. The one person with the marketplace keys still carries them in their pocket, so marketplace actions happen when that laptop is awake. The megaphone that shouts new jobs on socials isn't wired up yet; jobs still render on the site.
+
 ## How we work
 
 - `main` is protected in spirit: **nobody pushes to it directly, including me.** Everything lands by PR.
@@ -23,7 +36,7 @@ Deadline: **July 17, 2026**. Team of 4.
 | Lane | Owner | Deliverable |
 |---|---|---|
 | **Backend / protocol** | Kenny | ASP registration + onchainos integration, port lifecycle (mint / grant / revoke / scrap), MCP tools (`publish`, `get_offers`, `negotiate`, `hire`, `approve`) |
-| **Payout + contracts** | open, grab it | Forwarding contract on XLayer (register-at-hire, forward-by-anyone, fee split), release watcher |
+| **Payout + contracts** | open, grab it | Forwarding contract on XLayer (register-at-hire, forward-by-anyone, forwards in full), release watcher |
 | **Frontend** | PASdeco | Job pages, claim flow with embedded wallet onboarding, freelancer chat UI, evidence submission |
 | **Distribution + demo** | open, grab it | X + Telegram posting pipeline, demo storyboard, submission page, pitch |
 
