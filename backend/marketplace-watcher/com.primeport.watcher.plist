@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Keeps the marketplace watcher running on the operator's Mac: starts at
-     login, restarts if it dies. The watcher stays local because the onchainos
-     CLI session is machine-bound (see docs/deploy-hugging-face.md).
+<!-- The watcher runs HERE on the operator's Mac and welds to the Render
+     backend: the OKX agent identity (email login, agent #5021) only exists
+     in this machine's onchainos session, and API-key logins land in a
+     separate empty account (confirmed 2026-07-13), so the cloud cannot hold
+     it. caffeinate -s keeps the Mac awake while on AC power so vending
+     survives the lid; on battery, sleep pauses vending until wake.
 
      Install:
        cp com.primeport.watcher.plist ~/Library/LaunchAgents/
@@ -16,16 +19,20 @@
   <array>
     <string>/bin/zsh</string>
     <string>-lc</string>
-    <string>exec node watcher.mjs run</string>
+    <string>exec caffeinate -s node watcher.mjs run</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/user/Documents/prime-port/backend/marketplace-watcher</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <!-- Point the welds at the deployed board once the Space exists,
-         e.g. https://<user>-prime-port.hf.space -->
+    <!-- launchd's login shell skips .zshrc, so fnm's node bin (where okx-a2a
+         lives) never reaches PATH on its own; pin the whole PATH here. -->
+    <key>PATH</key>
+    <string>/Users/user/.local/share/fnm/node-versions/v22.22.2/installation/bin:/Users/user/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <!-- The deployed board: the one existing Render service (free hours are
+         capped, so this URL is it until at least August). -->
     <key>BACKEND_URL</key>
-    <string>http://localhost:7860</string>
+    <string>https://prime-port-latest.onrender.com</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>

@@ -45,19 +45,34 @@ AI agents hire real humans for jobs agents can't do. The agent pays through OKX'
 
 ## FULL LIFECYCLE (all confirmed against the live protocol docs / CLI)
 
-1. **Agent engages Prime Port** on the OKX marketplace. Task created (status 0). No funds locked yet.
+1. **Agent engages Prime Port** on the OKX marketplace and buys the **publish task**: a flat service fee (small, exact number proposed in the payout lane issue). This pays for fan-out, the port, and the key. It settles on key delivery and is independent of whether a hire ever happens.
 2. **We mint the port**: a fresh XMTP identity for this job. The agent gets access to it (an XMTP installation on the port inbox, NOT the root key) and operates it on its own power from here.
 3. **Auto-distribution**: job page renders on our site, fan-out to X + Telegram. Socials are adverts only; claiming happens on our site.
 4. **Freelancers claim**: email/Google sign-in, embedded wallet provisioned (MPC, e.g. Privy — we can NOT sign for them), each claimer gets a private E2E channel with the agent inside the port. Nobody sees anyone else's negotiation.
 5. **Negotiation**: agent talks to every candidate directly. Clarifies, haggles, plans. All messages wallet-signed.
-6. **Hire = pay.** Agent calls `hire(candidate)`. Freelancer confirms payout address (embedded wallet by default, any address they choose). Terms + payout address + transcript hash get dual-signed and committed. Marketplace acceptance fires -> **escrow locks now, not before** (native: funds escrow at status 1). Losing candidates' channels close and are never seen by anyone.
+6. **Hire = pay.** Agent calls `hire(candidate)`. Freelancer confirms payout address (embedded wallet by default, any address they choose). Terms + payout address + transcript hash get dual-signed and committed. `hire()` opens the **job task** on the marketplace at the port-negotiated price (only possible against a port paid for by a publish task). Marketplace acceptance fires -> **escrow locks now, not before** (native: funds escrow at status 1). Losing candidates' channels close and are never seen by anyone.
 7. **Work + delivery**: freelancer submits evidence through the port (URLs, files, media, tx hashes — see job scope below). UI shows "start work" only after escrow is locked.
 8. **Settlement**:
    - Agent approves -> escrow releases.
    - Agent goes silent -> protocol timeout auto-completes -> freelancer still paid. (Native.)
    - Agent disputes -> OKX's staked evaluators rule -> escrow obeys. (Native. We build no judge in v1.)
-9. **Payout**: OKX releases to the ASP account -> funds flow into our per-job **forwarding contract** on XLayer, registered at hire time to the freelancer's address. `forward(jobId)` is callable by anyone and can only pay the registered address, minus our transparent fee. We hold zero discretion over destination or timing.
+9. **Payout**: OKX releases to the ASP account -> funds flow into our per-job **forwarding contract** on XLayer, registered at hire time to the freelancer's address. `forward(jobId)` is callable by anyone and can only pay the registered address, **in full**: our fee was already collected by the publish task, so 100% of the job escrow can only ever reach the freelancer. We hold zero discretion over destination or timing.
 10. **Scrap**: after final settlement + a short quiet window (~1h; the timer stalls while anything is unresolved), we archive the signed transcript, revoke the agent's XMTP installation, and retire the port identity. Key dead, address non-reusable.
+
+---
+
+## PAYMENT MODEL (two tasks, one rail)
+
+Every job involves two purchases by the agent, and both are ordinary OKX marketplace tasks against our listed service, so both inherit native escrow, timeout auto-complete, and the evaluator court. We add no payment rail of our own.
+
+1. **The publish task (our service fee).** Flat and small, priced before any human is involved. Escrow locks when the agent accepts, and delivery is the fan-out plus the port plus the temporary key, all timestamped and provable from our side. It settles on approval or timeout. Our revenue is fully decoupled from the job's outcome: a job that gets no claims, or a hire that goes sour, does not claw back the fee for a service that was demonstrably performed.
+2. **The job task (the freelancer's money).** Opened by `hire()` at whatever price the agent and the freelancer negotiated inside the port. Escrow locks at acceptance, the hire commitment (jobId, price, payout address, transcript hash) binds this task to that specific port, and on release the funds route through the forwarding contract to the freelancer's registered address **in full**. No fee split at this stage, ever.
+
+Sequencing is enforced by us, not by OKX: `hire()` refuses to open a job task unless it references a live port created by a paid publish task. The two tasks also keep their dispute surfaces separate. A publish dispute argues "did the port get delivered", which our own evidence answers. A job dispute argues "was the work good", which the transcript and evidence archive answer.
+
+**Listing status**: resubmitted 2026-07-12 with both services declared: "Job publishing" at a flat 1 USDT fee and "Freelancer hiring" with no fixed fee (the port negotiation sets it per job). The storefront description says it plainly: we never do the job, we bring the humans who do. The QA review clock restarted with that truthful text, by choice.
+
+In everyday terms: the agent pays us a small posting fee up front, like paying a job board to run an ad, and that money is ours the moment the ad is up and the phone line is handed over. The wage for the actual work is a second, separate payment that sits in the marketplace's vault until the work is approved, and when it comes out, every cent of it can only go to the worker. We already got ours; we cannot touch theirs.
 
 ---
 
@@ -89,7 +104,7 @@ Rule: build the evidence pipe to carry ANY media from day one. Attempt verificat
 | Lane | Owner | Deliverable |
 |---|---|---|
 | **Backend / protocol** | Kenny | ASP registration + onchainos integration, port lifecycle (mint / installation grant / revoke / scrap), MCP tools (`publish`, `get_offers`, `negotiate`, `hire`, `approve`), GenLayer evaluator (stretch) |
-| **Payout + contracts** | open, grab it | Forwarding contract on XLayer (register-at-hire, forward-by-anyone, fee split), release watcher |
+| **Payout + contracts** | open, grab it | Forwarding contract on XLayer (register-at-hire, forward-by-anyone, forwards in full), release watcher |
 | **Frontend** | open, grab it | Job pages, claim flow with embedded wallet onboarding, freelancer chat UI (no edit/delete affordances), evidence submission |
 | **Distribution + demo** | open, grab it | X + Telegram posting pipeline, demo storyboard, submission page, pitch |
 
@@ -99,7 +114,7 @@ Load-bearing Day 1 spec: **the port access credential + the hire commitment obje
 
 ## THE DEMO
 
-1. Agent engages Prime Port and publishes a job with real criteria (no money down yet — say this out loud, it's the humanly-natural part)
+1. Agent engages Prime Port, pays the flat posting fee, and publishes a job with real criteria (none of the wage is down yet: say this out loud, it's the humanly-natural part)
 2. Job hits X/Telegram, **a real phone buzzes**
 3. A human claims via email login and negotiates the price UP, talking to the agent directly in the port
 4. Agent calls `hire()` -> escrow locks live on XLayer
