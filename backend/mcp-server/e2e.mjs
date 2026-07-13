@@ -60,7 +60,10 @@ const call = async (name, args) => {
 // the hiring agent's marketplace wallet (stand-in)
 const agentAccount = privateKeyToAccount(generatePrivateKey());
 
-// 1. agent publishes
+// 1. agent publishes, referencing the marketplace publish task it bought.
+// The port exists from here, but stays locked until the publish escrow
+// lock is reported (in production by the watcher; here by hand).
+const mktPublishTask = `mkt-pub-${Date.now()}`;
 const pub = await call("publish", {
   title: "Review our docs, 700 words",
   criteria: "Write a 700-word review of the Prime Port docs. Plain English.",
@@ -69,9 +72,17 @@ const pub = await call("publish", {
   deadline: Math.floor(Date.now() / 1000) + 86400 * 3,
   agentId: "5021-client-demo",
   agentWallet: agentAccount.address,
+  marketplaceJobId: mktPublishTask,
 });
 ok("publish returns a job and a port inbox", !!pub.jobId && !!pub.port.inboxId);
 const { jobId } = pub;
+
+const earlyKey = await mcp.callTool({ name: "port_connect", arguments: { jobId } });
+ok("port_connect refuses before the publish escrow locks", earlyKey.isError);
+
+await rest("POST", `/jobs/${jobId}/publish-task/paid`, { marketplaceJobId: mktPublishTask });
+const paidJob = (await rest("GET", "/jobs")).find((j) => j.jobId === jobId);
+ok("publish task marked paid on the job", !!paidJob.publishTask.paidAt);
 
 // 2. freelancer claims via REST, then DMs the port over XMTP
 const flAccount = privateKeyToAccount(generatePrivateKey());
@@ -97,6 +108,8 @@ const offers = await call("get_offers", { jobId });
 ok("get_offers shows the claimant and their message", offers.offers.length === 1 && offers.offers[0].channel.messageCount >= 1);
 const neg = await call("negotiate", { jobId, claimantInboxId: fl.inboxId, message: "48 and it's a deal." });
 ok("negotiate relays and returns the channel", neg.channel.some((m) => m.fromPort && m.content.includes("48")));
+const afterNeg = (await rest("GET", "/jobs")).find((j) => j.jobId === jobId);
+ok("operating the port marks the publish key delivered", !!afterNeg.publishTask.keyDeliveredAt);
 await dm.sync();
 ok("freelancer receives the port's message", (await dm.messages()).some((m) => typeof m.content === "string" && m.content.includes("48")));
 await dm.send("deal at 48.");
@@ -125,7 +138,17 @@ ok("agent signature verifies", confirmed.ok);
 const countersigned = await rest("POST", `/jobs/${jobId}/countersign`, {
   signature: await flAccount.signMessage({ message: hire.signThisExactly }),
 });
-ok("freelancer countersignature verifies, job is hired", countersigned.hired);
+ok("freelancer countersignature verifies, deal is committed", countersigned.committed);
+const committedJob = (await rest("GET", "/jobs")).find((j) => j.jobId === jobId);
+ok("countersign leaves the job awaiting the wage escrow, not hired", committedJob.status === "awaiting-escrow");
+
+// 4c. the agent opens the job task at the committed price; the watcher links
+// it by commitment hash and reports its escrow lock (simulated here).
+const mktJobTask = `mkt-job-${Date.now()}`;
+const linked = await rest("POST", `/jobs/${jobId}/job-task`, { marketplaceJobId: mktJobTask });
+ok("job task links and echoes the committed price", linked.linked && linked.price === "48");
+const escrowed = await rest("POST", `/jobs/${jobId}/job-task/paid`, { marketplaceJobId: mktJobTask });
+ok("job-task escrow lock flips the job to hired", escrowed.paid && escrowed.status === "hired");
 
 // 4b. delivery: the freelancer encrypts the deliverable, uploads the
 // ciphertext to the port's attachment store, and sends the evidence through
@@ -220,6 +243,13 @@ ok(
 );
 const rateOpen = await mcp.callTool({ name: "rate", arguments: { jobId: pub2.jobId, stars: 5 } });
 ok("rating an unsettled job is refused", rateOpen.isError);
+// pub2 was published without a marketplace publish task: the listing is up,
+// but the port-operating verbs stay locked. This is the enforcement line.
+const hireUnpaid = await mcp.callTool({
+  name: "hire",
+  arguments: { jobId: pub2.jobId, claimantInboxId: fl.inboxId, price: "10", deadline: Math.floor(Date.now() / 1000) + 86400 },
+});
+ok("hire refuses on a port nobody paid for", hireUnpaid.isError && hireUnpaid.content[0].text.includes("publish task"));
 
 // 9. events for the other lanes
 const events = readFileSync(new URL("./data/events.jsonl", import.meta.url), "utf8")
@@ -229,8 +259,18 @@ const events = readFileSync(new URL("./data/events.jsonl", import.meta.url), "ut
   .filter((e) => e.jobId === jobId);
 const types = events.map((e) => e.type);
 ok(
-  "event stream carries job-created, hire-committed, job-approved, port-scrapped, freelancer-rated",
-  ["job-created", "hire-committed", "job-approved", "port-scrapped", "freelancer-rated"].every((t) => types.includes(t)),
+  "event stream carries the full two-task lifecycle",
+  [
+    "job-created",
+    "publish-task-paid",
+    "publish-delivered",
+    "hire-committed",
+    "job-task-linked",
+    "job-task-escrowed",
+    "job-approved",
+    "port-scrapped",
+    "freelancer-rated",
+  ].every((t) => types.includes(t)),
 );
 const ratedEvt = events.find((e) => e.type === "freelancer-rated");
 ok("freelancer-rated event carries the stars and review hash", ratedEvt.stars === 4 && ratedEvt.reviewHash === rate.reviewHash);

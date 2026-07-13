@@ -7,7 +7,8 @@
 // Two other surfaces share the process:
 //   - REST for the freelancer web app (claim a job, countersign the hire),
 //   - an append-only events file (data/events.jsonl) that distribution and
-//     contracts consume (job-created, hire-committed, job-approved). The
+//     contracts consume (job-created, publish-task-paid, publish-delivered,
+//     hire-committed, job-task-linked, job-task-escrowed, job-approved). The
 //     marketplace escrow calls hang off those same events; wiring them to
 //     onchainos is the next lane deliverable and marked MARKETPLACE below.
 import { createServer } from "node:http";
@@ -42,6 +43,41 @@ const getJob = (jobId) => {
   const job = jobs[jobId];
   if (!job) throw new Error(`unknown job ${jobId}`);
   return job;
+};
+
+// The two-task payment model, enforced. Every port is paid for by a publish
+// task on the marketplace (the flat service fee); the wage rides a second
+// job task opened after the hire commitment is dual-signed. The port-
+// operating verbs refuse to run until the publish escrow is locked, so a
+// port nobody bought is a listing you can look at and nothing more.
+const requirePaidPort = (job, verb) => {
+  if (!job.publishTask)
+    throw new Error(`${verb} needs a paid port: this job was published without a marketplace publish task (pass marketplaceJobId when publishing, or buy the publish service on the marketplace and let the watcher vend it)`);
+  if (!job.publishTask.paidAt)
+    throw new Error(`${verb} needs a paid port: publish task ${job.publishTask.marketplaceJobId} exists but its escrow has not locked yet`);
+};
+
+// Key delivery is the publish task's settlement moment: the first time the
+// agent takes the port key (port_connect) or operates the port through us
+// (negotiate), the publish deliverable is complete and provable.
+const markKeyDelivered = (job, via) => {
+  if (job.publishTask.keyDeliveredAt) return;
+  job.publishTask.keyDeliveredAt = Date.now();
+  save();
+  emit("publish-delivered", {
+    jobId: job.jobId,
+    marketplaceJobId: job.publishTask.marketplaceJobId,
+    via,
+    portInboxId: job.port.inboxId,
+  });
+};
+
+// Watcher-facing endpoints carry payment facts; a shared token keeps random
+// callers from marking their own port paid. Unset means open (local dev).
+const WATCHER_TOKEN = process.env.WATCHER_TOKEN ?? "";
+const requireWatcher = (req) => {
+  if (WATCHER_TOKEN && req.headers["x-watcher-token"] !== WATCHER_TOKEN)
+    throw new Error("watcher token required");
 };
 const text = (obj) => ({ content: [{ type: "text", text: JSON.stringify(obj, null, 2) }] });
 
@@ -110,7 +146,15 @@ async function publishJob(args) {
     feeBps: FEE_BPS,
     port: { inboxId: port.inboxId, address: port.address, grantToken: port.grantToken },
     claims: [],
-    ...(args.marketplaceJobId ? { marketplaceJobId: args.marketplaceJobId } : {}),
+    // The marketplace order that bought this listing IS the publish task.
+    // paidAt lands when the watcher sees its escrow lock; keyDeliveredAt when
+    // the agent takes the port. Both are settlement facts, not our opinions.
+    ...(args.marketplaceJobId
+      ? {
+          marketplaceJobId: args.marketplaceJobId,
+          publishTask: { marketplaceJobId: args.marketplaceJobId, paidAt: null, keyDeliveredAt: null },
+        }
+      : {}),
     createdAt: Date.now(),
   };
   save();
@@ -132,13 +176,14 @@ function buildServer() {
       agentId: z.string().describe("Your OKX marketplace agent id"),
       agentWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe("Your marketplace wallet; it will sign the hire commitment"),
       title: z.string().max(120),
+      marketplaceJobId: z.string().optional().describe("The OKX task id of the publish task you opened against our 'Job publishing' service. Without it the listing goes up, but port_connect, negotiate and hire stay locked: the publish fee pays for the port."),
     },
     async (args) => {
       const { jobId, port } = await publishJob(args);
       return text({
         jobId,
         port,
-        next: "Freelancers will claim and appear in get_offers. Talk to them yourself via port_connect (preferred) or negotiate (we relay).",
+        next: "Freelancers will claim and appear in get_offers. Talk to them yourself via port_connect (preferred) or negotiate (we relay). Both unlock once your publish task's escrow locks.",
       });
     },
   );
@@ -149,6 +194,8 @@ function buildServer() {
     { jobId: z.string() },
     async ({ jobId }) => {
       const job = getJob(jobId);
+      requirePaidPort(job, "port_connect");
+      markKeyDelivered(job, "port_connect");
       return text({
         inboxId: job.port.inboxId,
         identity: job.port.address,
@@ -193,6 +240,8 @@ function buildServer() {
     async ({ jobId, claimantInboxId, message }) => {
       const job = getJob(jobId);
       if (job.status !== "open") throw new Error(`job is ${job.status}, negotiation is over`);
+      requirePaidPort(job, "negotiate");
+      markKeyDelivered(job, "negotiate");
       if (!job.claims.some((c) => c.inboxId === claimantInboxId)) throw new Error("no such claimant");
       await portSvc("POST", `/ports/${jobId}/messages`, { peerInboxId: claimantInboxId, content: message });
       const ch = await portSvc("GET", `/ports/${jobId}/channel?peer=${claimantInboxId}`);
@@ -213,6 +262,7 @@ function buildServer() {
     async ({ jobId, claimantInboxId, price, deadline, criteria }) => {
       const job = getJob(jobId);
       if (job.status !== "open") throw new Error(`job is ${job.status}`);
+      requirePaidPort(job, "hire");
       const claim = job.claims.find((c) => c.inboxId === claimantInboxId);
       if (!claim) throw new Error("no such claimant");
       const ch = await portSvc("GET", `/ports/${jobId}/channel?peer=${claimantInboxId}`);
@@ -256,7 +306,11 @@ function buildServer() {
       job.pendingHire.agentSignature = signature;
       job.status = "awaiting-freelancer-signature";
       save();
-      return text({ ok: true, waitingOn: "freelancer countersignature via the web app" });
+      return text({
+        ok: true,
+        waitingOn: "freelancer countersignature via the web app",
+        then: `once countersigned, open a job task on the marketplace against our 'Freelancer hiring' service at the committed price (${job.pendingHire.commitment.terms.price} ${job.pendingHire.commitment.terms.currency}) with this commitment hash in the task title or description: ${job.pendingHire.hash}. Escrow locking on that task is what moves the job to hired.`,
+      });
     },
   );
 
@@ -269,10 +323,10 @@ function buildServer() {
       if (job.status !== "hired") throw new Error(`job is ${job.status}, nothing to approve`);
       job.status = "approved";
       save();
-      // MARKETPLACE: agent confirms complete on OKX (escrow release) — wired in
-      // the onchainos integration deliverable. The forwarding contract watcher
-      // picks up the release from this event.
-      emit("job-approved", { jobId, commitmentHash: job.pendingHire.hash });
+      // MARKETPLACE: agent confirms complete on OKX (escrow release on the
+      // job task) — wired in the onchainos integration deliverable. The
+      // forwarding contract watcher picks up the release from this event.
+      emit("job-approved", { jobId, commitmentHash: job.pendingHire.hash, marketplaceJobId: job.jobTask?.marketplaceJobId });
       const scrapped = await portSvc("POST", `/ports/${jobId}/scrap`, {});
       job.status = "settled";
       job.archive = scrapped.archive;
@@ -381,18 +435,67 @@ const rest = {
     });
     if (!valid) throw new Error("signature does not recover the freelancer wallet");
     job.pendingHire.freelancerSignature = body.signature;
-    job.status = "hired";
+    // Both signatures are in: the deal is committed, but nobody's money has
+    // moved. The agent now opens the job task on the marketplace at the
+    // committed price; the watcher links it by commitment hash and reports
+    // its escrow lock, which is what flips the job to hired. Register-at-hire
+    // (forwarding contract) keys off this event: the payout address is final
+    // from the moment both signatures exist.
+    job.status = "awaiting-escrow";
     save();
-    // MARKETPLACE: this is the acceptance moment — escrow locks now (onchainos
-    // set-payment-mode + confirm-accept), and register-at-hire fires on the
-    // forwarding contract with (jobId, payoutAddress, feeBps).
     emit("hire-committed", {
       jobId,
       commitmentHash: hash,
       payoutAddress: commitment.freelancer.payoutAddress,
       feeBps: commitment.feeBps,
     });
-    return { hired: true, commitmentHash: hash };
+    return { committed: true, commitmentHash: hash, waitingOn: "job task escrow on the marketplace" };
+  },
+  // Watcher-facing: payment facts observed on the marketplace. The board
+  // never asks the marketplace anything; the watcher tells it what happened.
+  "POST /jobs/:jobId/publish-task/paid": async (body, jobId, req) => {
+    requireWatcher(req);
+    const job = getJob(jobId);
+    if (!job.publishTask) throw new Error("job has no publish task");
+    if (body.marketplaceJobId !== job.publishTask.marketplaceJobId)
+      throw new Error(`marketplaceJobId does not match this job's publish task`);
+    if (!job.publishTask.paidAt) {
+      job.publishTask.paidAt = Date.now();
+      save();
+      emit("publish-task-paid", { jobId, marketplaceJobId: job.publishTask.marketplaceJobId });
+    }
+    return { paid: true };
+  },
+  "POST /jobs/:jobId/job-task": async (body, jobId, req) => {
+    requireWatcher(req);
+    const job = getJob(jobId);
+    if (job.status !== "awaiting-escrow")
+      throw new Error(`job is ${job.status}, a job task links only after both hire signatures`);
+    const marketplaceJobId = z.string().min(1).parse(body.marketplaceJobId);
+    if (job.jobTask && job.jobTask.marketplaceJobId !== marketplaceJobId)
+      throw new Error("a different job task is already linked");
+    if (!job.jobTask) {
+      job.jobTask = { marketplaceJobId, linkedAt: Date.now(), paidAt: null };
+      save();
+      emit("job-task-linked", { jobId, marketplaceJobId, commitmentHash: job.pendingHire.hash });
+    }
+    return { linked: true, price: job.pendingHire.commitment.terms.price, currency: job.pendingHire.commitment.terms.currency };
+  },
+  "POST /jobs/:jobId/job-task/paid": async (body, jobId, req) => {
+    requireWatcher(req);
+    const job = getJob(jobId);
+    if (!job.jobTask) throw new Error("no job task linked");
+    if (body.marketplaceJobId !== job.jobTask.marketplaceJobId)
+      throw new Error("marketplaceJobId does not match the linked job task");
+    if (!job.jobTask.paidAt) {
+      job.jobTask.paidAt = Date.now();
+      job.status = "hired";
+      save();
+      // MARKETPLACE: this is the acceptance moment — the wage is in escrow.
+      // The freelancer UI shows "start work" from here.
+      emit("job-task-escrowed", { jobId, marketplaceJobId: job.jobTask.marketplaceJobId, commitmentHash: job.pendingHire.hash });
+    }
+    return { paid: true, status: job.status };
   },
   "GET /freelancers/:inboxId/profile": async (_body, inboxId) => reputation(inboxId),
 };
@@ -418,7 +521,7 @@ createServer(async (req, res) => {
     res.end(JSON.stringify(obj));
   };
   try {
-    const m = path.match(/^\/(jobs|freelancers)(?:\/([\w.-]+)\/(\w+))?$/);
+    const m = path.match(/^\/(jobs|freelancers)(?:\/([\w.-]+)\/([\w/-]+))?$/);
     const key = m
       ? m[2]
         ? `${req.method} /${m[1]}/:${m[1] === "jobs" ? "jobId" : "inboxId"}/${m[3]}`
@@ -426,7 +529,7 @@ createServer(async (req, res) => {
       : `${req.method} ${path}`;
     const handler = rest[key];
     if (!handler) return reply(404, { error: `no route ${key}` });
-    reply(200, await handler(body, m?.[2]));
+    reply(200, await handler(body, m?.[2], req));
   } catch (e) {
     console.error(`[mcp-server] ${req.method} ${path}:`, e.message);
     reply(400, { error: e.message });

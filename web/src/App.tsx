@@ -623,7 +623,7 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
   const dealPrice = (job: PublicJob) =>
     job.pendingHire ? `${job.pendingHire.commitment.price} ${job.pendingHire.commitment.currency}` : fmtBudget(job);
   const statusLabel = (job?: PublicJob) =>
-    !job ? "" : job.status === "open" ? "Negotiating" : job.status === "hired" || job.status === "approved" ? `Escrow locked · ${dealPrice(job)}` : job.status === "settled" ? `Paid · ${dealPrice(job)} released` : "Awaiting signatures";
+    !job ? "" : job.status === "open" ? "Negotiating" : job.status === "hired" || job.status === "approved" ? `Escrow locked · ${dealPrice(job)}` : job.status === "awaiting-escrow" ? `Deal signed · locking escrow · ${dealPrice(job)}` : job.status === "settled" ? `Paid · ${dealPrice(job)} released` : "Awaiting signatures";
 
   return (
     <div style={s.dchatPage}>
@@ -705,7 +705,7 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
                   <div style={{ alignSelf: "center", maxWidth: 420, display: "flex", flexDirection: "column", gap: 10, background: t.accentSoft, border: `1px solid ${t.accent}`, borderRadius: 14, padding: "14px 18px", textAlign: "center" }}>
                     <span style={{ font: `700 14px ${BODY}`, color: t.ink }}>The agent signed a hire commitment · {pendingHire.commitment.price} {pendingHire.commitment.currency}</span>
                     <span style={{ font: `400 13px/1.5 ${BODY}`, color: t.muted }}>
-                      Countersign to accept. Escrow locks the moment you do, and payment goes to {shortAddr(identity?.payoutAddress ?? "")}.
+                      Countersign to accept. The agent then funds escrow on the marketplace; wait for "Escrow locked" here before starting work. Payment goes to {shortAddr(identity?.payoutAddress ?? "")}.
                     </span>
                     <button
                       style={{ background: t.accent, color: "#fff", border: "none", borderRadius: 10, padding: "10px 16px", font: `700 14px ${BODY}`, cursor: signing ? "wait" : "pointer" }}
@@ -841,6 +841,7 @@ function Settings({ t, s, navigate, session, identity, claims, jobs }: Shared) {
     if (!job || job.status === "open" || job.status === "hiring") return { label: "Applied" };
     if (!hiredMe(job)) return { label: "Filled" };
     if (job.status === "awaiting-freelancer-signature") return { label: "Awaiting your signature", strong: true };
+    if (job.status === "awaiting-escrow") return { label: "Deal signed · locking escrow", strong: true };
     if (job.status === "settled") return { label: `Paid · ${commitPrice(job)}`, strong: true };
     return { label: `Escrow locked · ${commitPrice(job)}`, strong: true };
   };

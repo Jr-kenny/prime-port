@@ -1,7 +1,7 @@
 // Thin client over the mcp-server REST surface (proxied at /api by Vite).
 export type PublicJob = {
   jobId: string;
-  status: "open" | "hiring" | "awaiting-freelancer-signature" | "hired" | "approved" | "settled";
+  status: "open" | "hiring" | "awaiting-freelancer-signature" | "awaiting-escrow" | "hired" | "approved" | "settled";
   title: string;
   criteria: string;
   price: string;
@@ -43,5 +43,5 @@ export const listJobs = () => api<PublicJob[]>("GET", "/jobs");
 export const claimJob = (jobId: string, claim: { inboxId: string; wallet: string; payoutAddress?: string; name: string }) =>
   api<{ claimed: boolean; portInboxId: string }>("POST", `/jobs/${jobId}/claims`, claim);
 export const countersignHire = (jobId: string, signature: string) =>
-  api<{ hired: boolean; commitmentHash: string }>("POST", `/jobs/${jobId}/countersign`, { signature });
+  api<{ committed: boolean; commitmentHash: string }>("POST", `/jobs/${jobId}/countersign`, { signature });
 export const getProfile = (inboxId: string) => api<FreelancerProfile>("GET", `/freelancers/${inboxId}/profile`);

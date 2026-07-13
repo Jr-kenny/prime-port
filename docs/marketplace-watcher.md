@@ -50,28 +50,47 @@ whole machine back into ask-first mode, but the normal state is hands-off. The o
 will never do alone is submit an empty envelope: handing over work still requires the finished
 work to exist.
 
-## The welds (full vending loop)
+## The welds (full vending loop, two-task payment model)
 
-Two automatic bridges close the loop between the marketplace and our own board, so a
-designation runs end to end with nobody touching anything:
+Every job involves two marketplace tasks (see the BRIEF's payment model): the **publish task**
+(our flat fee, `PUBLISH_FEE`, default 1) and the **job task** (the freelancer's wage at the
+port-negotiated price). The watcher tells them apart and welds both to the board:
 
-- **Designation → publish.** A fresh designation (status 0, never applied to) is immediately
-  `POST /jobs`-ed to our backend (`BACKEND_URL`, default `http://localhost:7860`), which mints
-  the port and opens the listing. The task description is the criteria, the posted budget is
-  the price, and the client agent's wallet is resolved from its marketplace profile
-  (`agent get-agents --agent-ids`). The board job id is remembered as `portJobId`.
-- **Settled → deliver.** When the linked board job reaches `settled` (the client agent
-  approved, the port archived), the watcher stages a deliverable text carrying the commitment
-  hash and transcript hashes; the normal lifecycle policy then submits it with `deliver`,
-  which releases marketplace escrow.
+- **Designation → publish.** A fresh designation (status 0, never applied to, no commitment
+  hash in it) is the publish task. It is immediately `POST /jobs`-ed to our backend
+  (`BACKEND_URL`, default `http://localhost:7860`), which mints the port and opens the
+  listing. The task description is the criteria, the posted budget is the client's opening
+  price for the work, and the client agent's wallet is resolved from its marketplace profile
+  (`agent get-agents --agent-ids`). Apply bids `PUBLISH_FEE`, never the budget: the budget is
+  what the work might cost, the fee is what publishing costs.
+- **Commitment hash → job task.** A fresh designation carrying a `0x…` commitment hash that
+  matches a board job in `awaiting-escrow` is the wage for a signed hire. The watcher links it
+  (`POST /jobs/:id/job-task`) and applies at exactly the committed price.
+- **Escrow reports.** When either task reaches status 1 (accepted, escrow locked), the watcher
+  reports it to the board (`publish-task/paid` / `job-task/paid`). The board enforces the
+  sequencing off these facts: `port_connect`, `negotiate` and `hire` refuse until the publish
+  escrow locks, and the job only turns `hired` when the job-task escrow locks. If
+  `WATCHER_TOKEN` is set on both processes, these report calls carry it as a header and the
+  board rejects reports without it.
+- **Deliverables, split by kind.** The publish task's deliverable stages as soon as the agent
+  takes the port key (or first operates the port through us): listing live, fan-out done, key
+  delivered, all timestamped. It settles whether or not a hire ever happens. The job task's
+  deliverable stages when the board job reaches `settled`, carrying the commitment hash and
+  transcript hashes as before.
 
 Tasks that were applied to by hand before the welds existed are never re-published: an
-untracked `done.apply` marks them as already handled.
+untracked `done.apply` marks them as already handled. Records from before the two-task split
+have no `kind` and keep the old settled-only deliverable rule.
 
-In plain terms: the coin drops (a client assigns us a task), the machine turns it into a job
-posting with its own private mailbox, humans do the work and get approved, and the machine
-hands the receipt back to the marketplace so everyone gets paid. The two welds are the "turns
-it into a posting" and "hands the receipt back" steps, which used to be Kenny running scripts.
+In plain terms: the client now pays twice, on purpose. The first coin is a small flat posting
+fee, like paying a job board to run an ad; the machine takes that coin, puts the ad up, and
+hands over the phone line, and at that point the posting fee is earned no matter how the
+hiring goes. The second coin is the worker's wage: after the agent and the freelancer shake
+hands on a price inside the port, the agent drops a second task carrying the deal's
+fingerprint, the machine recognizes it, bills exactly the agreed price, and only when that
+money is locked in the marketplace's vault does the job actually start. The machine also
+refuses to hand over the phone line, or let anyone get hired, before the first coin has
+cleared, so nobody gets our service or a worker's time on credit.
 
 ## Distribution fan-out
 
