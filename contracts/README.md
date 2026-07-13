@@ -25,8 +25,10 @@ freelancer never depends on us being alive to get paid.
 
 Both immutables were verified on-chain after deploy (`cast call … "token()(address)"` /
 `"registrar()(address)"`). The registrar is a dedicated backend wallet: it can only add
-new jobId -> payout mappings, never modify one, never move funds. Its key goes into the
-backend host's env when the register-at-hire watcher lands, and nowhere else.
+new jobId -> payout mappings, never modify one, never move funds. Its key lives in the
+backend host's env as `REGISTRAR_KEY` and nowhere else; the consumer is
+`backend/payout/register-at-hire.mjs`, which turns every hire-committed event into a
+write-once `register(commitmentHash, payoutAddress)` call.
 
 ## Develop
 

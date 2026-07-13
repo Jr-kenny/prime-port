@@ -29,6 +29,7 @@ const DIRS = [
   ["mcp-server-data", new URL("./mcp-server/data/", import.meta.url).pathname],
   ["distribution-data", new URL("./distribution/data/", import.meta.url).pathname],
   ["marketplace-watcher-data", new URL("./marketplace-watcher/data/", import.meta.url).pathname],
+  ["payout-data", new URL("./payout/data/", import.meta.url).pathname],
 ];
 
 const enabled = () => Boolean(REMOTE);

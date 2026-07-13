@@ -89,6 +89,12 @@ the copier's badge (the token) opens only that one drawer.
      the container runs `onchainos wallet login` (API-key mode) at boot.
      Enter these in the Koyeb dashboard yourself; they control the agent
      wallet.
+   - `REGISTRAR_KEY` (optional, secret) = turns on register-at-hire: every
+     dual-signed hire gets its payout address registered on the JobForwarder
+     (contracts/README.md has the deployed address). This is the private key
+     of the registrar wallet burned into the contract; fund it with ~0.001
+     OKB on X Layer. Enter it in the dashboard yourself. Off means hires
+     still work, they just don't register on-chain until it's set.
 5. In the GitHub repo settings, add a repository **variable** `SPACE_URL`
    with the Koyeb URL. The `keep space awake` workflow pings `/health` every
    6 hours as a liveness alarm (Koyeb's free instance doesn't sleep, so this

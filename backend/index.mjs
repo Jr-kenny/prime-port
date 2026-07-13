@@ -26,6 +26,7 @@ await restoreState();
 await import("./port-service/service.mjs");
 await import("./mcp-server/server.mjs");
 await import("./distribution/poster.mjs");
+await import("./payout/register-at-hire.mjs");
 startBackupLoop();
 
 // Path prefix -> internal port. Everything the web app and agents touch:

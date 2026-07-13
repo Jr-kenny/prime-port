@@ -30,15 +30,18 @@ WORKDIR /app
 COPY commitment/package.json commitment/package-lock.json commitment/
 COPY port-service/package.json port-service/package-lock.json port-service/
 COPY mcp-server/package.json mcp-server/package-lock.json mcp-server/
+COPY payout/package.json payout/package-lock.json payout/
 RUN cd commitment && npm ci --omit=dev \
  && cd ../port-service && npm ci --omit=dev \
- && cd ../mcp-server && npm ci --omit=dev
+ && cd ../mcp-server && npm ci --omit=dev \
+ && cd ../payout && npm ci --omit=dev
 
 COPY commitment/commitment.mjs commitment/
 COPY port-service/service.mjs port-service/
 COPY mcp-server/server.mjs mcp-server/
 COPY distribution/poster.mjs distribution/
 COPY marketplace-watcher/watcher.mjs marketplace-watcher/
+COPY payout/register-at-hire.mjs payout/
 COPY index.mjs state-sync.mjs ./
 
 # Spaces runs the container unprivileged; everything the process writes

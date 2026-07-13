@@ -1,0 +1,8 @@
+{
+  "name": "@prime-port/payout",
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "viem": "2.48.4"
+  }
+}
