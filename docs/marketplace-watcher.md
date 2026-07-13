@@ -78,6 +78,17 @@ port-negotiated price). The watcher tells them apart and welds both to the board
   deliverable stages when the board job reaches `settled`, carrying the commitment hash and
   transcript hashes as before.
 
+- **Wage release (weld 3).** Once a job settles on our side and its deliverable went to the
+  marketplace, the watcher walks the released escrow to the freelancer: claim ASP rewards,
+  approve exactly the committed amount, `deposit(commitmentHash, amount)` into the
+  JobForwarder, `forward()`. One step per poll cycle, each decision re-derived from the
+  chain (the `Forwarded` event log is the receipt, the forwarder's per-job balance means
+  "deposited, push it out"), so crashes resume where the chain says. Deposit is the one
+  non-idempotent step, so its tx is remembered and checked before any retry. The ASP wallet
+  signs via `onchainos wallet contract-call` and needs a dust of OKB for gas. Logic lives in
+  `wage-release.mjs` with the state machine unit-tested against a stubbed chain
+  (`node --test wage-release.test.mjs`).
+
 Tasks that were applied to by hand before the welds existed are never re-published: an
 untracked `done.apply` marks them as already handled. Records from before the two-task split
 have no `kind` and keep the old settled-only deliverable rule.
@@ -91,6 +102,13 @@ fingerprint, the machine recognizes it, bills exactly the agreed price, and only
 money is locked in the marketplace's vault does the job actually start. The machine also
 refuses to hand over the phone line, or let anyone get hired, before the first coin has
 cleared, so nobody gets our service or a worker's time on credit.
+
+And when the vault finally pays out, the machine finishes the job on its own: it collects
+the money, drops exactly the agreed wage into the one-way chute that was welded to the
+worker's address back when the deal was signed, and pushes it through. It does this in
+small careful steps, checking the public ledger before each one, so even if the machine
+loses power halfway it picks up exactly where it left off and can never pay the same wage
+twice.
 
 ## Distribution fan-out
 

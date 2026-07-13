@@ -40,7 +40,7 @@ COPY commitment/commitment.mjs commitment/
 COPY port-service/service.mjs port-service/
 COPY mcp-server/server.mjs mcp-server/
 COPY distribution/poster.mjs distribution/
-COPY marketplace-watcher/watcher.mjs marketplace-watcher/
+COPY marketplace-watcher/watcher.mjs marketplace-watcher/wage-release.mjs marketplace-watcher/
 COPY payout/register-at-hire.mjs payout/
 COPY index.mjs state-sync.mjs ./
 

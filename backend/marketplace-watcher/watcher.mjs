@@ -18,6 +18,7 @@
 import { execFile } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { promisify } from "node:util";
+import { createWageRelease } from "./wage-release.mjs";
 
 const run = promisify(execFile);
 const AGENT_ID = process.env.AGENT_ID ?? "5021";
@@ -193,6 +194,18 @@ async function linkJobTask(task, rec, boardJobs) {
   return true;
 }
 
+// Weld 3: the wage walks home. Once a job settles on our side and its
+// deliverable went to the marketplace, this drives the released escrow
+// through claim -> deposit -> forward, one chain-derived step per cycle.
+const releaseWages = createWageRelease({
+  cli,
+  emit,
+  agentId: AGENT_ID,
+  rpcUrl: process.env.XLAYER_RPC ?? "https://rpc.xlayer.tech",
+  forwarder: process.env.FORWARDER_ADDRESS ?? "0x16Aa17463fCD7201A403F42B257778dC84e7E025",
+  usdt: process.env.USDT_ADDRESS ?? "0x1E4a5963aBFD975d8c9021ce480b42188849D41d",
+});
+
 // Escrow facts flow one way: marketplace -> watcher -> board. Status 1 means
 // accepted, and acceptance is when escrow locks; the board gates the port
 // (publish) or flips the job to hired (job) off these reports.
@@ -258,6 +271,12 @@ async function pollOnce() {
   } catch (e) {
     emit("mkt-stage-failed", { error: e.message });
     console.error(`[watcher] deliverable staging failed: ${e.message}`);
+  }
+  try {
+    await releaseWages(state.tasks, boardJobs);
+  } catch (e) {
+    emit("mkt-wage-release-failed", { error: e.message });
+    console.error(`[watcher] wage release failed: ${e.message}`);
   }
   const { data } = await cli(["agent", "active-tasks"]);
   for (const task of data.tasks ?? []) {
