@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Keeps the marketplace watcher running on the operator's Mac: starts at
+     login, restarts if it dies. The watcher stays local because the onchainos
+     CLI session is machine-bound (see docs/deploy-hugging-face.md).
+
+     Install:
+       cp com.primeport.watcher.plist ~/Library/LaunchAgents/
+       launchctl load ~/Library/LaunchAgents/com.primeport.watcher.plist
+     Logs land in marketplace-watcher/data/watcher.{out,err}.log -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.primeport.watcher</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>exec node watcher.mjs run</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/user/Documents/prime-port/backend/marketplace-watcher</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- Point the welds at the deployed board once the Space exists,
+         e.g. https://<user>-prime-port.hf.space -->
+    <key>BACKEND_URL</key>
+    <string>http://localhost:7860</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/user/Documents/prime-port/backend/marketplace-watcher/data/watcher.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/user/Documents/prime-port/backend/marketplace-watcher/data/watcher.err.log</string>
+</dict>
+</plist>

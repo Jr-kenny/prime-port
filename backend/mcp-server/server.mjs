@@ -81,6 +81,43 @@ function reputation(inboxId) {
   };
 }
 
+// Publishing a job = mint a port + open the listing. One function, two
+// callers: the MCP publish tool (agents talking MCP) and REST POST /jobs
+// (the marketplace watcher vending a designation into a listing).
+const publishShape = z.object({
+  criteria: z.string(),
+  price: z.string().regex(/^\d+(\.\d{1,6})?$/),
+  currency: z.literal("USDT").default("USDT"),
+  deadline: z.number().int(),
+  agentId: z.string(),
+  agentWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+  title: z.string().max(120),
+  marketplaceJobId: z.string().optional(),
+});
+
+async function publishJob(args) {
+  const jobId = `job-${Date.now()}-${randomUUID().slice(0, 8)}`;
+  const port = await portSvc("POST", "/ports", { jobId });
+  jobs[jobId] = {
+    jobId,
+    status: "open",
+    title: args.title,
+    criteria: args.criteria,
+    price: args.price,
+    currency: args.currency,
+    deadline: args.deadline,
+    agent: { agentId: args.agentId, wallet: args.agentWallet.toLowerCase() },
+    feeBps: FEE_BPS,
+    port: { inboxId: port.inboxId, address: port.address, grantToken: port.grantToken },
+    claims: [],
+    ...(args.marketplaceJobId ? { marketplaceJobId: args.marketplaceJobId } : {}),
+    createdAt: Date.now(),
+  };
+  save();
+  emit("job-created", { jobId, title: args.title, price: args.price, deadline: args.deadline, marketplaceJobId: args.marketplaceJobId });
+  return { jobId, port: { inboxId: port.inboxId } };
+}
+
 function buildServer() {
   const mcp = new McpServer({ name: "prime-port", version: "0.1.0" });
 
@@ -97,27 +134,10 @@ function buildServer() {
       title: z.string().max(120),
     },
     async (args) => {
-      const jobId = `job-${Date.now()}-${randomUUID().slice(0, 8)}`;
-      const port = await portSvc("POST", "/ports", { jobId });
-      jobs[jobId] = {
-        jobId,
-        status: "open",
-        title: args.title,
-        criteria: args.criteria,
-        price: args.price,
-        currency: args.currency,
-        deadline: args.deadline,
-        agent: { agentId: args.agentId, wallet: args.agentWallet.toLowerCase() },
-        feeBps: FEE_BPS,
-        port: { inboxId: port.inboxId, address: port.address, grantToken: port.grantToken },
-        claims: [],
-        createdAt: Date.now(),
-      };
-      save();
-      emit("job-created", { jobId, title: args.title, price: args.price, deadline: args.deadline });
+      const { jobId, port } = await publishJob(args);
       return text({
         jobId,
-        port: { inboxId: port.inboxId },
+        port,
         next: "Freelancers will claim and appear in get_offers. Talk to them yourself via port_connect (preferred) or negotiate (we relay).",
       });
     },
@@ -328,6 +348,7 @@ function buildServer() {
 
 // REST for the freelancer web app.
 const rest = {
+  "POST /jobs": async (body) => publishJob(publishShape.parse(body)),
   "GET /jobs": async () =>
     Object.values(jobs).map(({ port, pendingHire, pendingReview, ...pub }) => ({
       ...pub,

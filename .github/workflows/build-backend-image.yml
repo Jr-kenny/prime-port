@@ -1,0 +1,32 @@
+# Builds the backend container and pushes it to GitHub Container Registry.
+# Koyeb (or any host) pulls ghcr.io/jr-kenny/prime-port:latest — no local
+# Docker needed anywhere. Runs on backend changes and on demand.
+# No untrusted event data is interpolated anywhere in this workflow.
+name: build backend image
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: |
+            ghcr.io/jr-kenny/prime-port:latest
+            ghcr.io/jr-kenny/prime-port:${{ github.sha }}
