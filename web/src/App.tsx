@@ -621,7 +621,7 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
 
   // Past the claim stage the negotiated commitment price is the truth, not the listing price.
   const dealPrice = (job: PublicJob) =>
-    job.pendingHire ? `${job.pendingHire.commitment.price} ${job.pendingHire.commitment.currency}` : fmtBudget(job);
+    job.pendingHire ? `${job.pendingHire.commitment.terms.price} ${job.pendingHire.commitment.terms.currency}` : fmtBudget(job);
   const statusLabel = (job?: PublicJob) =>
     !job ? "" : job.status === "open" ? "Negotiating" : job.status === "hired" || job.status === "approved" ? `Escrow locked · ${dealPrice(job)}` : job.status === "awaiting-escrow" ? `Deal signed · locking escrow · ${dealPrice(job)}` : job.status === "settled" ? `Paid · ${dealPrice(job)} released` : "Awaiting signatures";
 
@@ -703,7 +703,7 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
                 </div>
                 {pendingHire && (
                   <div style={{ alignSelf: "center", maxWidth: 420, display: "flex", flexDirection: "column", gap: 10, background: t.accentSoft, border: `1px solid ${t.accent}`, borderRadius: 14, padding: "14px 18px", textAlign: "center" }}>
-                    <span style={{ font: `700 14px ${BODY}`, color: t.ink }}>The agent signed a hire commitment · {pendingHire.commitment.price} {pendingHire.commitment.currency}</span>
+                    <span style={{ font: `700 14px ${BODY}`, color: t.ink }}>The agent signed a hire commitment · {pendingHire.commitment.terms.price} {pendingHire.commitment.terms.currency}</span>
                     <span style={{ font: `400 13px/1.5 ${BODY}`, color: t.muted }}>
                       Countersign to accept. The agent then funds escrow on the marketplace; wait for "Escrow locked" here before starting work. Payment goes to {shortAddr(identity?.payoutAddress ?? "")}.
                     </span>
@@ -832,10 +832,10 @@ function Settings({ t, s, navigate, session, identity, claims, jobs }: Shared) {
 
   // A job is mine past the claim stage only if the hire commitment names me.
   const hiredMe = (job?: PublicJob) => job?.pendingHire?.commitment.freelancer.inboxId === identity.inboxId;
-  const commitPrice = (job: PublicJob) => `${job.pendingHire!.commitment.price} ${job.pendingHire!.commitment.currency}`;
+  const commitPrice = (job: PublicJob) => `${job.pendingHire!.commitment.terms.price} ${job.pendingHire!.commitment.terms.currency}`;
   const settledEarnings = jobs
     .filter((j) => j.status === "settled" && hiredMe(j))
-    .reduce((sum, j) => sum + Number(j.pendingHire!.commitment.price), 0);
+    .reduce((sum, j) => sum + Number(j.pendingHire!.commitment.terms.price), 0);
 
   const historyFor = (job?: PublicJob): { label: string; strong?: boolean } => {
     if (!job || job.status === "open" || job.status === "hiring") return { label: "Applied" };

@@ -12,10 +12,11 @@ export type PublicJob = {
   port: { inboxId: string };
   pendingHire?: {
     hash: string;
+    // Mirrors the real commitment shape (docs/hire-commitment.md): the
+    // negotiated price and currency live under terms, not at the top level.
     commitment: {
       freelancer: { inboxId: string; wallet: string; payoutAddress: string };
-      price: string;
-      currency: string;
+      terms: { price: string; currency: string };
     };
   };
   createdAt: number;
