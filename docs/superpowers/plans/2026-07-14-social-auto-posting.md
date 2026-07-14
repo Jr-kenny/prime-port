@@ -15,19 +15,19 @@
 ## File Structure
 
 **Backend (`backend/`):**
-- `distribution/poster.mjs` — REWRITE. The poll loop and orchestration only. Iterates channels, uses `selectPosts` to decide, posts, records posted state. No formatting, no channel specifics, no local dedup file.
-- `distribution/select.mjs` — CREATE. Pure function `selectPosts(jobs, channelNames, cap)`. No I/O, fully unit-testable.
-- `distribution/channels/telegram.mjs` — CREATE. The Telegram channel module (its `enabled`, `post`, and its own message formatter).
-- `distribution/channels/x.mjs` — CREATE. The X channel module (its `enabled`, `post` via `POST /2/tweets`, its own 280-char formatter).
-- `distribution/channels/oauth1.mjs` — CREATE. Pure OAuth 1.0a `Authorization` header builder. No I/O.
-- `distribution/select.test.mjs`, `distribution/channels/oauth1.test.mjs`, `distribution/channels/x.test.mjs`, `distribution/channels/telegram.test.mjs` — CREATE. Unit tests with `node:test`.
-- `mcp-server/server.mjs` — MODIFY. Initialise `postedTo: {}` on new jobs (in `publishJob`, ~line 137) and add the `POST /jobs/:jobId/posted` REST handler (in the `rest` object, near the other `/jobs/:jobId/...` handlers ~line 495).
+- `distribution/poster.mjs` - REWRITE. The poll loop and orchestration only. Iterates channels, uses `selectPosts` to decide, posts, records posted state. No formatting, no channel specifics, no local dedup file.
+- `distribution/select.mjs` - CREATE. Pure function `selectPosts(jobs, channelNames, cap)`. No I/O, fully unit-testable.
+- `distribution/channels/telegram.mjs` - CREATE. The Telegram channel module (its `enabled`, `post`, and its own message formatter).
+- `distribution/channels/x.mjs` - CREATE. The X channel module (its `enabled`, `post` via `POST /2/tweets`, its own 280-char formatter).
+- `distribution/channels/oauth1.mjs` - CREATE. Pure OAuth 1.0a `Authorization` header builder. No I/O.
+- `distribution/select.test.mjs`, `distribution/channels/oauth1.test.mjs`, `distribution/channels/x.test.mjs`, `distribution/channels/telegram.test.mjs` - CREATE. Unit tests with `node:test`.
+- `mcp-server/server.mjs` - MODIFY. Initialise `postedTo: {}` on new jobs (in `publishJob`, ~line 137) and add the `POST /jobs/:jobId/posted` REST handler (in the `rest` object, near the other `/jobs/:jobId/...` handlers ~line 495).
 
 **Web (`web/`):**
-- `api/share.js` — CREATE. Serverless function: given `?id`, returns HTML with per-job OG tags and a human redirect to `/jobs/<id>`.
-- `api/og.js` — CREATE. Edge function: given `?id`, returns a branded PNG card via `@vercel/og`.
-- `vercel.json` — MODIFY. Add `/s/:id` and `/og/:id` rewrites *before* the existing backend proxy and SPA fallback.
-- `package.json` — MODIFY. Add `@vercel/og` dependency.
+- `api/share.js` - CREATE. Serverless function: given `?id`, returns HTML with per-job OG tags and a human redirect to `/jobs/<id>`.
+- `api/og.js` - CREATE. Edge function: given `?id`, returns a branded PNG card via `@vercel/og`.
+- `vercel.json` - MODIFY. Add `/s/:id` and `/og/:id` rewrites *before* the existing backend proxy and SPA fallback.
+- `package.json` - MODIFY. Add `@vercel/og` dependency.
 
 **Removed:** the `posted.json` file and all its read/write logic (was in `poster.mjs`).
 
@@ -647,7 +647,7 @@ git commit -am "distribution: fixups from full-suite run" || true
 
 ---
 
-## Task 8: Share endpoint on Vercel — OG tags + human redirect
+## Task 8: Share endpoint on Vercel, OG tags and human redirect
 
 `/s/<id>` returns per-job Open Graph tags for crawlers and redirects people to the job.
 
