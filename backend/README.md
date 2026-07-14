@@ -15,10 +15,16 @@ Monitoring and negotiating through that existing port do not trigger another
 Prime Port publication charge. The eventual freelancer wage is agreed and
 escrowed separately.
 
-State (port keys, XMTP identity DBs, jobs ledger, watcher memory) is
+State (port keys, XMTP identity DBs, jobs ledger, watcher memory, and the
+OKX A2A session store) is
 mirrored to a private git repo because free-tier disks are ephemeral; set
 `STATE_REMOTE`. The watcher needs `OKX_API_KEY` / `OKX_SECRET_KEY` /
-`OKX_PASSPHRASE` (API-key wallet login at boot); without them it stays off.
+`OKX_PASSPHRASE` (API-key wallet login at boot). Set
+`ENABLE_MARKETPLACE_WATCHER=1` to run it. Set `ENABLE_A2A_RESPONDER=1` plus
+`NVIDIA_API_KEY` to run the always-on XMTP listener and Hermes/NVIDIA
+responder. `HERMES_NVIDIA_MODEL` can override the default Nemotron model.
+Both are opt-in so a cloud instance can be verified before the Mac fallback
+is stopped; never leave two watchers/responders active for the same agent.
 
 Built by `.github/workflows/build-backend-image.yml` into
 `ghcr.io/jr-kenny/prime-port:latest`; deployed on Koyeb's free instance.

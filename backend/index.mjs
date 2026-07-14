@@ -11,12 +11,18 @@
 // the watcher stays off and everything else runs normally.
 import { createServer, request } from "node:http";
 import { spawn, execFile } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { restoreState, startBackupLoop } from "./state-sync.mjs";
 
 // The public port: APP_PORT if set, else the host-assigned PORT (Render
 // injects one and routes traffic to it), else 7860 (Hugging Face style).
 const APP_PORT = Number(process.env.APP_PORT ?? process.env.PORT ?? 7860);
+const isEnabled = (value) => ["1", "true", "yes", "on"].includes(String(value ?? "").toLowerCase());
+const runtimeStatus = {
+  marketplaceWatcher: "disabled",
+  a2aResponder: "disabled",
+};
 
 // Each service reads process.env.PORT with its own fallback (8791 / 8792).
 // Clearing PORT before import lets both fall back and the proxy own APP_PORT.
@@ -42,7 +48,7 @@ createServer((req, res) => {
   const path = new URL(req.url, "http://x").pathname;
   if (path === "/" || path === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
-    return res.end(JSON.stringify({ ok: true, service: "prime-port" }));
+    return res.end(JSON.stringify({ ok: true, service: "prime-port", components: runtimeStatus }));
   }
   const port = upstream(path);
   if (!port) {
@@ -63,18 +69,38 @@ createServer((req, res) => {
   req.pipe(up);
 }).listen(APP_PORT, () => console.log(`[prime-port] public surface on :${APP_PORT}`));
 
-// OKX marketplace watcher: AK login, then run as a child process (its run
-// loop never returns, so it can't be imported like the servers). If it dies
-// it comes back in 30s with a fresh login.
+let okxLoginPromise;
+function ensureOkxLogin() {
+  if (!okxLoginPromise) {
+    okxLoginPromise = promisify(execFile)("onchainos", ["wallet", "login", "--force"], { timeout: 120_000 })
+      .then(() => console.log("[prime-port] onchainos wallet login ok (AK)"))
+      .catch((error) => {
+        okxLoginPromise = undefined;
+        throw error;
+      });
+  }
+  return okxLoginPromise;
+}
+
+// OKX marketplace watcher: opt-in so a cloud deployment can be brought up
+// and verified before the old watcher is stopped. Never run two watchers for
+// the same ASP.
 async function startWatcher() {
+  if (!isEnabled(process.env.ENABLE_MARKETPLACE_WATCHER)) {
+    runtimeStatus.marketplaceWatcher = "disabled";
+    console.log("[prime-port] ENABLE_MARKETPLACE_WATCHER is off, marketplace watcher disabled");
+    return;
+  }
   if (!process.env.OKX_API_KEY || !process.env.OKX_SECRET_KEY || !process.env.OKX_PASSPHRASE) {
-    console.log("[prime-port] OKX_API_KEY/OKX_SECRET_KEY/OKX_PASSPHRASE not set, marketplace watcher off");
+    runtimeStatus.marketplaceWatcher = "blocked:missing-okx-credentials";
+    console.log("[prime-port] OKX credentials not set, marketplace watcher off");
     return;
   }
   try {
-    await promisify(execFile)("onchainos", ["wallet", "login", "--force"], { timeout: 120_000 });
-    console.log("[prime-port] onchainos wallet login ok (AK)");
+    runtimeStatus.marketplaceWatcher = "starting";
+    await ensureOkxLogin();
   } catch (e) {
+    runtimeStatus.marketplaceWatcher = "retrying-login";
     console.error(`[prime-port] onchainos login failed, retrying in 60s: ${(e.stderr || e.message).trim().split("\n")[0]}`);
     setTimeout(startWatcher, 60_000);
     return;
@@ -84,9 +110,85 @@ async function startWatcher() {
     [new URL("./marketplace-watcher/watcher.mjs", import.meta.url).pathname, "run"],
     { stdio: "inherit", env: { ...process.env, BACKEND_URL: `http://127.0.0.1:${APP_PORT}` } },
   );
+  runtimeStatus.marketplaceWatcher = "running";
   watcher.on("exit", (code) => {
+    okxLoginPromise = undefined;
+    runtimeStatus.marketplaceWatcher = "restarting";
     console.error(`[prime-port] watcher exited (code ${code}), restarting in 30s`);
     setTimeout(startWatcher, 30_000);
   });
 }
+
+// A2A/XMTP listener + Hermes responder. Hermes talks to NVIDIA NIM through
+// its first-class OpenAI-compatible provider, so the cloud worker needs no
+// desktop session and no OpenAI account. Secrets stay in environment vars.
+async function startA2AResponder() {
+  if (!isEnabled(process.env.ENABLE_A2A_RESPONDER)) {
+    runtimeStatus.a2aResponder = "disabled";
+    console.log("[prime-port] ENABLE_A2A_RESPONDER is off, cloud A2A responder disabled");
+    return;
+  }
+  if (!process.env.OKX_API_KEY || !process.env.OKX_SECRET_KEY || !process.env.OKX_PASSPHRASE) {
+    runtimeStatus.a2aResponder = "blocked:missing-okx-credentials";
+    console.log("[prime-port] OKX credentials not set, cloud A2A responder off");
+    return;
+  }
+  if (!process.env.NVIDIA_API_KEY) {
+    runtimeStatus.a2aResponder = "blocked:missing-nvidia-key";
+    console.log("[prime-port] NVIDIA_API_KEY not set, cloud A2A responder off");
+    return;
+  }
+
+  const taskHome = process.env.OKX_AGENT_TASK_HOME ?? "/app/okx-agent-task";
+  const aiWorkspace = process.env.OKX_A2A_AI_CWD ?? "/app/a2a-workspace";
+  const hermesHome = process.env.HERMES_HOME ?? "/app/hermes";
+  const hermesModel = process.env.HERMES_NVIDIA_MODEL ?? "nvidia/nemotron-3-super-120b-a12b";
+  if (!/^[a-zA-Z0-9._/-]+$/.test(hermesModel)) {
+    runtimeStatus.a2aResponder = "blocked:invalid-hermes-model";
+    console.error("[prime-port] HERMES_NVIDIA_MODEL contains unsupported characters");
+    return;
+  }
+  mkdirSync(taskHome, { recursive: true });
+  mkdirSync(aiWorkspace, { recursive: true });
+  mkdirSync(hermesHome, { recursive: true });
+  writeFileSync(
+    `${hermesHome}/config.yaml`,
+    `model:\n  provider: nvidia\n  default: ${hermesModel}\n`,
+    { mode: 0o600 },
+  );
+  const env = {
+    ...process.env,
+    OKX_AGENT_TASK_HOME: taskHome,
+    OKX_A2A_AI_CWD: aiWorkspace,
+    HERMES_HOME: hermesHome,
+    OKX_A2A_AI_PROVIDER: "hermes",
+    OKX_A2A_AI_PERMISSION_PRESET: "bypass",
+  };
+
+  try {
+    runtimeStatus.a2aResponder = "starting";
+    await ensureOkxLogin();
+    await promisify(execFile)("onchainos", ["preflight", "--skill-version", "4.2.4"], { env, timeout: 180_000 });
+    await promisify(execFile)("hermes", ["version"], { env, timeout: 30_000 });
+    await promisify(execFile)("okx-a2a", ["config", "provider", "--provider", "hermes"], { env, timeout: 30_000 });
+    await promisify(execFile)("okx-a2a", ["config", "permissions", "--preset", "bypass"], { env, timeout: 30_000 });
+    console.log(`[prime-port] cloud Hermes/NVIDIA A2A responder configured (${hermesModel})`);
+  } catch (error) {
+    runtimeStatus.a2aResponder = "retrying-setup";
+    console.error(`[prime-port] cloud A2A setup failed, retrying in 60s: ${error.message.split("\n")[0]}`);
+    setTimeout(startA2AResponder, 60_000);
+    return;
+  }
+
+  const listener = spawn("okx-a2a", ["run"], { stdio: "inherit", env });
+  runtimeStatus.a2aResponder = "running";
+  listener.on("exit", (code) => {
+    okxLoginPromise = undefined;
+    runtimeStatus.a2aResponder = "restarting";
+    console.error(`[prime-port] cloud A2A responder exited (code ${code}), restarting in 30s`);
+    setTimeout(startA2AResponder, 30_000);
+  });
+}
+
 startWatcher();
+startA2AResponder();

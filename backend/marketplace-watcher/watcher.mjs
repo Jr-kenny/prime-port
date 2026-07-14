@@ -19,6 +19,8 @@ import { execFile } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { createWageRelease } from "./wage-release.mjs";
+import { openingOfferFromTaskAmount } from "../listing-price.mjs";
+import { parseMarketplaceBrief, REQUIRED_BRIEF_TEMPLATE } from "../brief-policy.mjs";
 
 const run = promisify(execFile);
 const AGENT_ID = process.env.AGENT_ID ?? "5021";
@@ -42,8 +44,9 @@ const AUTO_ENGAGE = (process.env.AUTO_ENGAGE ?? "true") !== "false";
 // marketplace deliverable.
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:7860";
 // The flat publish fee (BRIEF: two tasks, one rail). A publish designation's
-// posted budget is the client's opening price for the WORK; what we charge
-// for publishing is this fee, so apply always bids it, never the budget.
+// task amount can optionally be the client's opening offer for the WORK when
+// it exceeds this fee. At the fee itself, the job is open to freelancer offers.
+// Apply always bids this publication fee, never the optional opening offer.
 const PUBLISH_FEE = process.env.PUBLISH_FEE ?? "1";
 const WATCHER_TOKEN = process.env.WATCHER_TOKEN ?? "";
 
@@ -142,17 +145,19 @@ async function executeVerb(task, rec, verb, reason) {
 // spec, the posted budget is the client's opening price for the work. The
 // designation itself is the PUBLISH task: we apply at the flat fee, and its
 // escrow lock is what unlocks the port for the client agent.
-async function vendPublish(task, rec) {
+async function vendPublish(task, rec, brief) {
   try {
     const { data } = await cli(["agent", "get-agents", "--agent-ids", task.counterpartyAgentId]);
     const wallet = data?.[0]?.agentWalletAddress;
     if (!wallet) throw new Error(`no wallet on marketplace agent ${task.counterpartyAgentId}`);
     const j = await backendPost("/jobs", {
-      title: task.title,
-      criteria: task.title, // the task description is the spec; the client wrote this much
-      price: task.tokenAmount,
+      title: brief.title,
+      description: brief.description,
+      deliverables: brief.deliverables,
+      criteria: `${brief.description}\n\nDeliverables: ${brief.deliverables}\nAcceptance criteria: ${brief.acceptanceCriteria}`,
+      price: brief.openingOffer ?? openingOfferFromTaskAmount(task.tokenAmount, PUBLISH_FEE) ?? undefined,
       currency: task.tokenSymbol,
-      deadline: Math.floor(Date.now() / 1000) + 86400 * 3,
+      deadline: brief.deadline,
       agentId: task.counterpartyAgentId,
       agentWallet: wallet,
       marketplaceJobId: task.jobId,
@@ -166,6 +171,25 @@ async function vendPublish(task, rec) {
     // No local state written: next poll retries until the board answers.
     emit("mkt-vend-publish-failed", { jobId: task.jobId, error: e.message });
     console.error(`[watcher] vend-publish for ${task.jobId.slice(0, 10)}… failed: ${e.message}`);
+  }
+}
+
+async function requestMissingBrief(task, rec, missing) {
+  if (rec.briefRequestedAt) return;
+  const message =
+    `Your publication escrow is confirmed, but Prime Port cannot publish an incomplete freelancer job. ` +
+    `Missing: ${missing.join(", ")}. Reply with this template:\n${REQUIRED_BRIEF_TEMPLATE}`;
+  try {
+    await run("okx-a2a", [
+      "xmtp-send", "--job-id", task.jobId, "--to-agent-id", task.counterpartyAgentId,
+      "--session-agent-id", AGENT_ID, "--message", message, "--json",
+    ], { timeout: 60_000 });
+    rec.briefRequestedAt = Date.now();
+    emit("mkt-brief-requested", { jobId: task.jobId, missing });
+    console.log(`[watcher] requested missing brief fields for ${task.jobId.slice(0, 10)}…`);
+  } catch (e) {
+    emit("mkt-brief-request-failed", { jobId: task.jobId, error: e.message });
+    console.error(`[watcher] brief request for ${task.jobId.slice(0, 10)}… failed: ${e.message}`);
   }
 }
 
@@ -278,20 +302,36 @@ async function pollOnce() {
     emit("mkt-wage-release-failed", { error: e.message });
     console.error(`[watcher] wage release failed: ${e.message}`);
   }
-  const { data } = await cli(["agent", "active-tasks"]);
-  for (const task of data.tasks ?? []) {
+  const [{ data }, { data: detailData }] = await Promise.all([
+    cli(["agent", "active-tasks"]),
+    cli(["agent", "task-in-progress", "--agent-ids", AGENT_ID]),
+  ]);
+  const details = new Map((detailData.providerTasks ?? []).map((task) => [task.jobId, task]));
+  for (const summary of data.tasks ?? []) {
+    const detail = details.get(summary.jobId) ?? {};
+    const task = {
+      ...summary,
+      description: detail.description ?? summary.description,
+      counterpartyAgentId: summary.counterpartyAgentId ?? detail.buyerAgentId,
+    };
     const rec = (state.tasks[task.jobId] ??= { firstSeenAt: Date.now(), done: {} });
     if (rec.statusCode === undefined) {
       emit("mkt-task-designated", { jobId: task.jobId, title: task.title, counterparty: task.counterpartyAgentId, budget: `${task.tokenAmount} ${task.tokenSymbol}` });
       console.log(`[watcher] new task: "${task.title}" (${task.jobId.slice(0, 10)}…) from agent ${task.counterpartyAgentId}`);
     }
     // A fresh designation is either the wage for a signed hire (it carries
-    // the commitment hash) or a new publish purchase. Vend only untouched
-    // designations: a task that was already applied to (pre-weld, by hand)
-    // has a board job somewhere even if the link wasn't recorded, and
-    // re-publishing would duplicate the listing.
+    // the commitment hash) or a new publication purchase. Publication tasks
+    // are classified now but never placed on the public board before escrow.
     if (!rec.portJobId && task.statusCode === 0 && !rec.done?.apply && !parked[task.jobId]) {
-      if (!(await linkJobTask(task, rec, boardJobs))) await vendPublish(task, rec);
+      if (!(await linkJobTask(task, rec, boardJobs))) {
+        rec.kind = "publish";
+        rec.amount ??= PUBLISH_FEE;
+      }
+    }
+    if (rec.kind === "publish" && !rec.portJobId && task.statusCode === 1 && !parked[task.jobId]) {
+      const parsed = parseMarketplaceBrief(task);
+      if (parsed.complete) await vendPublish(task, rec, parsed.brief);
+      else await requestMissingBrief(task, rec, parsed.missing);
     }
     if (rec.statusCode !== undefined && rec.statusCode !== task.statusCode) {
       emit("mkt-task-status", { jobId: task.jobId, from: rec.statusCode, to: task.statusCode });

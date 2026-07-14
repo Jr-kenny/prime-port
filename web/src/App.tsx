@@ -52,7 +52,10 @@ const fmtDeadline = (deadline: number) => {
   const days = Math.max(0, Math.round((deadline * 1000 - Date.now()) / 86400000));
   return days === 0 ? "today" : days === 1 ? "1 day" : `${days} days`;
 };
-const fmtBudget = (job: PublicJob) => (job.price ? `${job.price} ${job.currency}` : "Open to offers");
+const hasOpeningOffer = (job: PublicJob) =>
+  Boolean(job.price) && !(job.publishTask && Number(job.price) <= 1);
+const fmtBudget = (job: PublicJob) =>
+  hasOpeningOffer(job) ? `${job.price} ${job.currency}` : "Open to offers";
 const fmtTime = (at: number) => new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(at));
 
 // A job the signed-in freelancer has claimed, derived entirely from the

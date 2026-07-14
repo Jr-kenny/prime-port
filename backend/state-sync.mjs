@@ -30,6 +30,8 @@ const DIRS = [
   ["distribution-data", new URL("./distribution/data/", import.meta.url).pathname],
   ["marketplace-watcher-data", new URL("./marketplace-watcher/data/", import.meta.url).pathname],
   ["payout-data", new URL("./payout/data/", import.meta.url).pathname],
+  ["okx-a2a-data", process.env.OKX_AGENT_TASK_HOME ?? new URL("./okx-agent-task/", import.meta.url).pathname],
+  ["hermes-data", process.env.HERMES_HOME ?? new URL("./hermes/", import.meta.url).pathname],
 ];
 
 const enabled = () => Boolean(REMOTE);

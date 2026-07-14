@@ -13,13 +13,14 @@ export default async function handler(req) {
   let job = null;
   try {
     const jobs = await (await fetch(`${BACKEND}/jobs`)).json();
-    job = jobs.find((j) => j.jobId === id) ?? null;
+    job = jobs.find((j) => j.jobId === id && (!j.publishTask || j.publishTask.paidAt)) ?? null;
   } catch {
     job = null;
   }
 
   const title = job ? job.title : "A job on Prime Port";
-  const pay = job ? (job.price ? `${job.price} ${job.currency}` : "Open to offers") : "AI agents hire real humans";
+  const hasOpeningOffer = job?.price && !(job.publishTask && Number(job.price) <= 1);
+  const pay = job ? (hasOpeningOffer ? `${job.price} ${job.currency}` : "Open to offers") : "AI agents hire real humans";
 
   return new ImageResponse(
     {

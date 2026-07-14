@@ -22,6 +22,7 @@ import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import { z } from "zod";
 import { verifyMessage } from "viem";
 import { commitmentHash, signingMessage } from "../commitment/commitment.mjs";
+import { clearLegacyPublicationPrice } from "../listing-price.mjs";
 
 const PORT = Number(process.env.PORT ?? 8792);
 const PORT_SVC = process.env.PORT_SVC ?? "http://localhost:8791";
@@ -38,6 +39,8 @@ mkdirSync(DATA, { recursive: true });
 const jobsPath = `${DATA}jobs.json`;
 const jobs = existsSync(jobsPath) ? JSON.parse(readFileSync(jobsPath, "utf8")) : {};
 const save = () => writeFileSync(jobsPath, JSON.stringify(jobs, null, 2));
+const numericPublishPrice = PUBLISH_PRICE.match(/\d+(?:\.\d+)?/)?.[0] ?? "1";
+if (Object.values(jobs).some((job) => clearLegacyPublicationPrice(job, numericPublishPrice))) save();
 const emit = (type, payload) =>
   appendFileSync(`${DATA}events.jsonl`, JSON.stringify({ type, at: Date.now(), ...payload }) + "\n");
 
@@ -130,13 +133,15 @@ function reputation(inboxId) {
 // callers: the MCP publish tool (agents talking MCP) and REST POST /jobs
 // (the marketplace watcher vending a designation into a listing).
 const publishShape = z.object({
-  criteria: z.string(),
+  description: z.string().min(30),
+  deliverables: z.string().min(10),
+  criteria: z.string().min(10),
   price: z.string().regex(/^\d+(\.\d{1,6})?$/).optional(),
   currency: z.literal("USDT").default("USDT"),
   deadline: z.number().int(),
   agentId: z.string(),
   agentWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
-  title: z.string().max(120),
+  title: z.string().min(8).max(120).refine((title) => !/^(post|publish|help me post|set up)\b/i.test(title), "title must describe the actual freelancer job"),
   marketplaceJobId: z.string().optional(),
 });
 const paidPublishShape = publishShape.omit({ marketplaceJobId: true });
@@ -148,6 +153,8 @@ async function publishJob(args) {
     jobId,
     status: "open",
     title: args.title,
+    description: args.description,
+    deliverables: args.deliverables,
     criteria: args.criteria,
     price: args.price ?? null,
     currency: args.currency,
@@ -183,13 +190,15 @@ function buildServer() {
     "publish",
     "Publish a job for human freelancers. Mints a private port (XMTP endpoint) for this job and returns it. No funds move yet; escrow locks only at hire.",
     {
-      criteria: z.string().describe("Acceptance criteria, plain text. This exact text goes into the signed hire commitment."),
+      criteria: z.string().min(10).describe("Acceptance criteria, plain text. This exact text goes into the signed hire commitment."),
+      description: z.string().min(30).describe("A concrete description of the human work. Generic instructions such as 'post a job' are rejected."),
+      deliverables: z.string().min(10).describe("The files, output, or evidence the freelancer must provide."),
       price: z.string().regex(/^\d+(\.\d{1,6})?$/).optional().describe("Offered price as a decimal string, e.g. '40'. Omit to list the job open to offers, with no anchor price: the freelancer names their rate and you settle it in negotiation."),
       currency: z.literal("USDT").default("USDT"),
       deadline: z.number().int().describe("Unix seconds UTC"),
       agentId: z.string().describe("Your OKX marketplace agent id"),
       agentWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe("Your marketplace wallet; it will sign the hire commitment"),
-      title: z.string().max(120),
+      title: z.string().min(8).max(120).refine((title) => !/^(post|publish|help me post|set up)\b/i.test(title), "title must describe the actual freelancer job"),
       marketplaceJobId: z.string().optional().describe("The OKX task id of the publish task you opened against our 'Job publishing' service. Without it the listing goes up, but port_connect, negotiate and hire stay locked: the publish fee pays for the port."),
     },
     async (args) => {
@@ -421,7 +430,7 @@ function buildServer() {
 const rest = {
   "POST /jobs": async (body) => publishJob(publishShape.parse(body)),
   "GET /jobs": async () =>
-    Object.values(jobs).map(({ port, pendingHire, pendingReview, ...pub }) => ({
+    Object.values(jobs).filter((job) => !job.publishTask || job.publishTask.paidAt).map(({ port, pendingHire, pendingReview, ...pub }) => ({
       ...pub,
       port: { inboxId: port.inboxId },
       pendingHire: pendingHire ? { hash: pendingHire.hash, commitment: pendingHire.commitment } : undefined,
