@@ -119,7 +119,7 @@ backend/
   index.mjs          single-process entry: proxies both services behind one port
   port-service/      mint / grant / operate / scrap, one port per job (XMTP)
   mcp-server/        the agent-facing MCP tools + REST, plus e2e.mjs and the demo driver
-  distribution/      job fan-out to Telegram (X to follow)
+  distribution/      job fan-out to X and Telegram with rich preview cards
   payout/            turns each hire into a write-once register() on the forwarder
 contracts/           JobForwarder (Foundry), deployed on X Layer
 web/                 job board, claim flow, embedded-wallet onboarding, chat
