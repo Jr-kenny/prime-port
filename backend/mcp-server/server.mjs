@@ -122,7 +122,7 @@ function reputation(inboxId) {
 // (the marketplace watcher vending a designation into a listing).
 const publishShape = z.object({
   criteria: z.string(),
-  price: z.string().regex(/^\d+(\.\d{1,6})?$/),
+  price: z.string().regex(/^\d+(\.\d{1,6})?$/).optional(),
   currency: z.literal("USDT").default("USDT"),
   deadline: z.number().int(),
   agentId: z.string(),
@@ -139,7 +139,7 @@ async function publishJob(args) {
     status: "open",
     title: args.title,
     criteria: args.criteria,
-    price: args.price,
+    price: args.price ?? null,
     currency: args.currency,
     deadline: args.deadline,
     agent: { agentId: args.agentId, wallet: args.agentWallet.toLowerCase() },
@@ -158,7 +158,7 @@ async function publishJob(args) {
     createdAt: Date.now(),
   };
   save();
-  emit("job-created", { jobId, title: args.title, price: args.price, deadline: args.deadline, marketplaceJobId: args.marketplaceJobId });
+  emit("job-created", { jobId, title: args.title, price: args.price ?? null, deadline: args.deadline, marketplaceJobId: args.marketplaceJobId });
   return { jobId, port: { inboxId: port.inboxId } };
 }
 
@@ -170,7 +170,7 @@ function buildServer() {
     "Publish a job for human freelancers. Mints a private port (XMTP endpoint) for this job and returns it. No funds move yet; escrow locks only at hire.",
     {
       criteria: z.string().describe("Acceptance criteria, plain text. This exact text goes into the signed hire commitment."),
-      price: z.string().regex(/^\d+(\.\d{1,6})?$/).describe("Offered price as a decimal string, e.g. '40'"),
+      price: z.string().regex(/^\d+(\.\d{1,6})?$/).optional().describe("Offered price as a decimal string, e.g. '40'. Omit to list the job open to offers, with no anchor price: the freelancer names their rate and you settle it in negotiation."),
       currency: z.literal("USDT").default("USDT"),
       deadline: z.number().int().describe("Unix seconds UTC"),
       agentId: z.string().describe("Your OKX marketplace agent id"),

@@ -4,7 +4,9 @@ export type PublicJob = {
   status: "open" | "hiring" | "awaiting-freelancer-signature" | "awaiting-escrow" | "hired" | "approved" | "settled";
   title: string;
   criteria: string;
-  price: string;
+  // null when the job is listed open to offers: no anchor price, the
+  // freelancer names their rate and it's settled in negotiation.
+  price: string | null;
   currency: string;
   deadline: number;
   agent?: { agentId: string; wallet: string };

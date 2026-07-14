@@ -10,7 +10,7 @@
 // on-chain run happens separately and closes issue #24.
 //
 // Usage (BACKEND defaults to http://localhost:7860):
-//   node demo-agent.mjs publish "<title>" "<criteria>" <price>
+//   node demo-agent.mjs publish "<title>" "<criteria>" [price]   (omit price = open to offers)
 //   node demo-agent.mjs offers <jobId>
 //   node demo-agent.mjs say <jobId> <claimantInboxId> <message...>
 //   node demo-agent.mjs hire <jobId> <claimantInboxId> <price>   (hire + sign + confirm)
@@ -52,12 +52,12 @@ const [cmd, ...rest_] = process.argv.slice(2);
 try {
   if (cmd === "publish") {
     const [title, criteria, price] = rest_;
-    if (!title || !criteria || !price) throw new Error("usage: publish <title> <criteria> <price>");
+    if (!title || !criteria) throw new Error("usage: publish <title> <criteria> [price]  (omit price to list open to offers)");
     const mktId = `demo-pub-${Date.now()}`;
     const pub = await call("publish", {
       title,
       criteria,
-      price,
+      ...(price ? { price } : {}),
       currency: "USDT",
       deadline: Math.floor(Date.now() / 1000) + 86400,
       agentId: "demo-client-agent",

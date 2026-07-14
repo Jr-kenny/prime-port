@@ -25,7 +25,7 @@ const savePosted = () => writeFileSync(postedPath, JSON.stringify(posted, null, 
 const jobMessage = (job) =>
   [
     `New job: ${job.title}`,
-    `Pays ${job.price} ${job.currency}, deadline ${new Date(job.deadline * 1000).toUTCString()}.`,
+    `${job.price ? `Pays ${job.price} ${job.currency}` : "Open to offers"}, deadline ${new Date(job.deadline * 1000).toUTCString()}.`,
     job.criteria && job.criteria !== job.title ? `Spec: ${job.criteria.slice(0, 300)}` : null,
     SITE_BASE ? `Claim it: ${SITE_BASE}/#${job.jobId}` : `Job id: ${job.jobId}`,
   ]
