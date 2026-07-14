@@ -146,6 +146,10 @@ async function publishJob(args) {
     feeBps: FEE_BPS,
     port: { inboxId: port.inboxId, address: port.address, grantToken: port.grantToken },
     claims: [],
+    // Which social channels this job has been posted to, and when. Written
+    // once per channel by POST /jobs/:jobId/posted so a redeploy never
+    // re-posts. Lives on the job so it rides the persisted, backed-up state.
+    postedTo: {},
     // The marketplace order that bought this listing IS the publish task.
     // paidAt lands when the watcher sees its escrow lock; keyDeliveredAt when
     // the agent takes the port. Both are settlement facts, not our opinions.
@@ -499,6 +503,13 @@ const rest = {
       emit("job-task-escrowed", { jobId, marketplaceJobId: job.jobTask.marketplaceJobId, commitmentHash: job.pendingHire.hash });
     }
     return { paid: true, status: job.status };
+  },
+  "POST /jobs/:jobId/posted": async (body, jobId) => {
+    const job = getJob(jobId);
+    const channel = z.enum(["telegram", "x"]).parse(body.channel);
+    job.postedTo = { ...job.postedTo, [channel]: Date.now() };
+    save();
+    return { recorded: true, channel, postedTo: job.postedTo };
   },
   "GET /freelancers/:inboxId/profile": async (_body, inboxId) => reputation(inboxId),
 };
