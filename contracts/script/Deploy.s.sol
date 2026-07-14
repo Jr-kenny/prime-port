@@ -8,7 +8,7 @@ import {JobForwarder} from "../src/JobForwarder.sol";
 ///   forge script script/Deploy.s.sol --rpc-url https://rpc.xlayer.tech \
 ///     --broadcast --private-key $DEPLOYER_KEY
 /// Env:
-///   USDT_ADDRESS   USDT on XLayer
+///   USDT_ADDRESS   USD₮0 on X Layer
 ///   REGISTRAR      backend wallet that registers hires (the ASP wallet)
 contract Deploy is Script {
     function run() external {

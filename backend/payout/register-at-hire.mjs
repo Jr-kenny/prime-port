@@ -15,7 +15,7 @@ import { createPublicClient, createWalletClient, defineChain, formatEther, http 
 import { privateKeyToAccount } from "viem/accounts";
 
 const REGISTRAR_KEY = process.env.REGISTRAR_KEY;
-const FORWARDER = process.env.FORWARDER_ADDRESS ?? "0x16Aa17463fCD7201A403F42B257778dC84e7E025";
+const FORWARDER = process.env.FORWARDER_ADDRESS ?? "0xe3f11D89e585e2F0009ee5c6f105861525f70712";
 const RPC = process.env.XLAYER_RPC ?? "https://rpc.xlayer.tech";
 const REGISTER_EVERY_MS = Number(process.env.REGISTER_EVERY_MS ?? 30_000);
 

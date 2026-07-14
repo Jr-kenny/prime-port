@@ -202,8 +202,8 @@ const releaseWages = createWageRelease({
   emit,
   agentId: AGENT_ID,
   rpcUrl: process.env.XLAYER_RPC ?? "https://rpc.xlayer.tech",
-  forwarder: process.env.FORWARDER_ADDRESS ?? "0x16Aa17463fCD7201A403F42B257778dC84e7E025",
-  usdt: process.env.USDT_ADDRESS ?? "0x1E4a5963aBFD975d8c9021ce480b42188849D41d",
+  forwarder: process.env.FORWARDER_ADDRESS ?? "0xe3f11D89e585e2F0009ee5c6f105861525f70712",
+  usdt: process.env.USDT_ADDRESS ?? "0x779ded0c9e1022225f8e0630b35a9b54be713736",
 });
 
 // Escrow facts flow one way: marketplace -> watcher -> board. Status 1 means
