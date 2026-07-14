@@ -37,7 +37,7 @@ filing cabinet gets photocopied.
 
 | Path prefix | Internal service | Port |
 | --- | --- | --- |
-| `/mcp`, `/jobs`, `/freelancers` | mcp-server | 8792 |
+| `/mcp`, `/mcp/publish`, `/jobs`, `/freelancers` | mcp-server | 8792 |
 | `/ports`, `/attachments` | port-service | 8791 |
 | `/`, `/health` | proxy itself (liveness) | 7860 |
 
@@ -83,12 +83,19 @@ the copier's badge (the token) opens only that one drawer.
    - `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` (optional) = turns on the
      distribution fan-out: every new job gets posted to that Telegram chat
    - `SITE_BASE` (optional) = the web app URL, used for claim links in posts
-   - `OKX_API_KEY` / `OKX_SECRET_KEY` / `OKX_PASSPHRASE` (optional) = turns
-     on the in-container marketplace watcher. Created in the
+   - `OKX_API_KEY` / `OKX_SECRET_KEY` / `OKX_PASSPHRASE` (required for the
+     paid endpoint) = authenticate x402 verification and settlement and also
+     turn on the in-container marketplace watcher. Created in the
      [OKX OnchainOS developer portal](https://web3.okx.com/onchainos/dev-docs/home/developer-portal);
      the container runs `onchainos wallet login` (API-key mode) at boot.
      Enter these in the Koyeb dashboard yourself; they control the agent
      wallet.
+   - `PUBLIC_BASE_URL` = the public backend origin, for example
+     `https://prime-port-latest.onrender.com`. The x402 challenge advertises
+     `${PUBLIC_BASE_URL}/mcp/publish` as the paid resource.
+   - `PAY_TO_ADDRESS` = the wallet receiving the fixed publication charge.
+     It defaults to Prime Port's current agent wallet.
+   - `PUBLISH_PRICE` = the fixed publication price (default `$1.00`).
    - `REGISTRAR_KEY` (optional, secret) = turns on register-at-hire: every
      dual-signed hire gets its payout address registered on the JobForwarder
      (contracts/README.md has the deployed address). This is the private key

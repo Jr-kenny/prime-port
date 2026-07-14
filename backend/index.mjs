@@ -33,7 +33,7 @@ startBackupLoop();
 // /mcp + /jobs + /freelancers live on mcp-server, /ports + /attachments on
 // port-service. Unknown paths 404 here rather than leak internals.
 const upstream = (path) => {
-  if (path === "/mcp" || path.startsWith("/jobs") || path.startsWith("/freelancers")) return 8792;
+  if (path === "/mcp" || path === "/mcp/publish" || path.startsWith("/jobs") || path.startsWith("/freelancers")) return 8792;
   if (path.startsWith("/ports") || path.startsWith("/attachments")) return 8791;
   return null;
 };

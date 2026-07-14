@@ -11,18 +11,27 @@
 //     hire-committed, job-task-linked, job-task-escrowed, job-approved). The
 //     marketplace escrow calls hang off those same events; wiring them to
 //     onchainos is the next lane deliverable and marked MARKETPLACE below.
-import { createServer } from "node:http";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { paymentMiddleware, x402ResourceServer } from "@okxweb3/x402-express";
+import { OKXFacilitatorClient } from "@okxweb3/x402-core";
+import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import { z } from "zod";
 import { verifyMessage } from "viem";
 import { commitmentHash, signingMessage } from "../commitment/commitment.mjs";
 
 const PORT = Number(process.env.PORT ?? 8792);
 const PORT_SVC = process.env.PORT_SVC ?? "http://localhost:8791";
-const FEE_BPS = Number(process.env.FEE_BPS ?? 250);
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL ?? "https://prime-port-latest.onrender.com";
+const PAY_TO_ADDRESS = process.env.PAY_TO_ADDRESS ?? "0x7ab4daee18a449eb76a8a7d66cb02cf34a28563e";
+const PUBLISH_PRICE = process.env.PUBLISH_PRICE ?? "$1.00";
+// Prime Port earns the fixed publication charge. It never deducts from the
+// separately negotiated freelancer wage; the commitment retains this field
+// for protocol compatibility and fixes it at zero.
+const FEE_BPS = 0;
 const DATA = new URL("./data/", import.meta.url).pathname;
 mkdirSync(DATA, { recursive: true });
 
@@ -130,6 +139,7 @@ const publishShape = z.object({
   title: z.string().max(120),
   marketplaceJobId: z.string().optional(),
 });
+const paidPublishShape = publishShape.omit({ marketplaceJobId: true });
 
 async function publishJob(args) {
   const jobId = `job-${Date.now()}-${randomUUID().slice(0, 8)}`;
@@ -514,26 +524,85 @@ const rest = {
   "GET /freelancers/:inboxId/profile": async (_body, inboxId) => reputation(inboxId),
 };
 
-createServer(async (req, res) => {
-  const path = new URL(req.url, "http://x").pathname;
-  if (path === "/mcp") {
-    // Stateless MCP: fresh server + transport per request.
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    res.on("close", () => transport.close());
-    await buildServer().connect(transport);
-    let body = "";
-    for await (const c of req) body += c;
-    return transport.handleRequest(req, res, body ? JSON.parse(body) : undefined);
+const okxFacilitator = new OKXFacilitatorClient({
+  apiKey: process.env.OKX_API_KEY ?? "",
+  secretKey: process.env.OKX_SECRET_KEY ?? "",
+  passphrase: process.env.OKX_PASSPHRASE ?? "",
+  baseUrl: process.env.OKX_BASE_URL ?? "https://web3.okx.com",
+  syncSettle: true,
+});
+// This mode is only for local unpaid-challenge tests. Payment verification and
+// settlement still go to OKX and therefore still require real credentials.
+const facilitator = process.env.X402_OFFLINE_CHALLENGE === "1"
+  ? {
+      getSupported: async () => ({
+        kinds: [{ x402Version: 2, scheme: "exact", network: "eip155:196" }],
+        extensions: [],
+        signers: {},
+      }),
+      verify: (...args) => okxFacilitator.verify(...args),
+      settle: (...args) => okxFacilitator.settle(...args),
+    }
+  : okxFacilitator;
+const paymentServer = new x402ResourceServer(facilitator)
+  .register("eip155:196", new ExactEvmScheme());
+const requirePublishPayment = paymentMiddleware(
+  {
+    "POST /mcp/publish": {
+      accepts: [{
+        scheme: "exact",
+        network: "eip155:196",
+        payTo: PAY_TO_ADDRESS,
+        price: PUBLISH_PRICE,
+        maxTimeoutSeconds: 300,
+      }],
+      description: "Publish a fully specified human job and create its private Prime Port",
+      mimeType: "application/json",
+      resource: `${PUBLIC_BASE_URL}/mcp/publish`,
+    },
+  },
+  paymentServer,
+);
+
+const app = express();
+app.use(express.json({ limit: "2mb" }));
+
+// The one paid operation. Discovery and every operation on an existing port
+// remain on /mcp without another charge. Reaching this handler means the OKX
+// middleware verified the payment authorization for this exact request.
+app.post("/mcp/publish", requirePublishPayment, async (req, res) => {
+  try {
+    const args = paidPublishShape.parse(req.body);
+    const paymentId = `x402-${randomUUID()}`;
+    const { jobId, port } = await publishJob({ ...args, marketplaceJobId: paymentId });
+    const job = jobs[jobId];
+    job.publishTask.paymentMode = "x402";
+    job.publishTask.paidAt = Date.now();
+    save();
+    emit("publish-task-paid", { jobId, marketplaceJobId: paymentId, paymentMode: "x402" });
+    res.json({
+      jobId,
+      port,
+      status: "waiting-for-freelancers",
+      mcpEndpoint: `${PUBLIC_BASE_URL}/mcp`,
+      next: "Connect to the port, monitor get_offers, and negotiate directly with freelancers. Publication does not guarantee that a freelancer will claim the job.",
+    });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
   }
-  const body = await new Promise((r) => {
-    let d = "";
-    req.on("data", (c) => (d += c));
-    req.on("end", () => r(d ? JSON.parse(d) : {}));
-  });
-  const reply = (code, obj) => {
-    res.writeHead(code, { "content-type": "application/json" });
-    res.end(JSON.stringify(obj));
-  };
+});
+
+app.all("/mcp", async (req, res) => {
+  // Stateless MCP: fresh server + transport per request.
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  res.on("close", () => transport.close());
+  await buildServer().connect(transport);
+  return transport.handleRequest(req, res, req.body);
+});
+
+app.all("*path", async (req, res) => {
+  const path = new URL(req.originalUrl, "http://x").pathname;
+  const body = req.body ?? {};
   try {
     const m = path.match(/^\/(jobs|freelancers)(?:\/([\w.-]+)\/([\w/-]+))?$/);
     const key = m
@@ -542,10 +611,14 @@ createServer(async (req, res) => {
         : `${req.method} /${m[1]}`
       : `${req.method} ${path}`;
     const handler = rest[key];
-    if (!handler) return reply(404, { error: `no route ${key}` });
-    reply(200, await handler(body, m?.[2], req));
+    if (!handler) return res.status(404).json({ error: `no route ${key}` });
+    res.json(await handler(body, m?.[2], req));
   } catch (e) {
     console.error(`[mcp-server] ${req.method} ${path}:`, e.message);
-    reply(400, { error: e.message });
+    res.status(400).json({ error: e.message });
   }
-}).listen(PORT, () => console.log(`[mcp-server] MCP on :${PORT}/mcp, REST on :${PORT}/jobs`));
+});
+
+app.listen(PORT, () =>
+  console.log(`[mcp-server] paid publish on :${PORT}/mcp/publish, MCP on :${PORT}/mcp, REST on :${PORT}/jobs`),
+);

@@ -4,12 +4,17 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "e2e": "node e2e.mjs"
+    "e2e": "node e2e.mjs",
+    "test": "node --test x402-publish.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "@okxweb3/x402-core": "^0.1.0",
+    "@okxweb3/x402-evm": "^0.2.1",
+    "@okxweb3/x402-express": "^0.1.1",
     "@xmtp/content-type-remote-attachment": "^2.0.4",
     "@xmtp/node-sdk": "4.6.0",
+    "express": "^5.2.1",
     "viem": "2.48.4",
     "zod": "^3.24.0"
   }

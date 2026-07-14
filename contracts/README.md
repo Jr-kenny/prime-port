@@ -17,11 +17,11 @@ freelancer never depends on us being alive to get paid.
 | | |
 |---|---|
 | Network | X Layer mainnet (chain id 196) |
-| Address | `0x16Aa17463fCD7201A403F42B257778dC84e7E025` |
-| Deploy tx | `0x3dcb48f50e6f0f5485ed75b86d6caa162c52022a7504022533fa0b9cc3e259d3` |
-| `token` (USDT) | `0x1E4a5963aBFD975d8c9021ce480b42188849D41d` |
+| Address | `0xe3f11D89e585e2F0009ee5c6f105861525f70712` |
+| Deploy tx | `0x916bfd9258b0c153769c97e3b06360c835428272256f086c434691e2705d461d` |
+| `token` (USD₮0) | `0x779ded0c9e1022225f8e0630b35a9b54be713736` |
 | `registrar` | `0xA48B285e8ced7880D5d38aD06Feffd7c79dF7a7f` |
-| Deployed | 2026-07-13 |
+| Deployed | 2026-07-14 |
 
 Both immutables were verified on-chain after deploy (`cast call … "token()(address)"` /
 `"registrar()(address)"`). The registrar is a dedicated backend wallet: it can only add
@@ -41,7 +41,7 @@ forge test --gas-report
 ## Deploy (for reference; already done)
 
 ```shell
-export USDT_ADDRESS=0x1E4a5963aBFD975d8c9021ce480b42188849D41d
+export USDT_ADDRESS=0x779ded0c9e1022225f8e0630b35a9b54be713736
 export REGISTRAR=<backend registrar wallet address>
 forge script script/Deploy.s.sol \
   --rpc-url https://rpc.xlayer.tech \

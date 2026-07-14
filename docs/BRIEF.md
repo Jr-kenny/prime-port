@@ -137,7 +137,7 @@ Load-bearing Day 1 spec: **the port access credential + the hire commitment obje
 - [x] Register Prime Port ASP identity — agent #5021, under review since 2026-07-11 (see docs/asp-registration.md)
 - [ ] Fill the three empty lanes
 - [ ] Verify agent-side UX for holding a port installation (how an OKX-side agent runs an XMTP client against our inbox — needs a spike)
-- [x] Forwarding contract: fee mechanics settled by the two-task model (no fee in the contract), deployed on XLayer mainnet 2026-07-13 at `0x16Aa17463fCD7201A403F42B257778dC84e7E025` (see contracts/README.md)
+- [x] Forwarding contract: no wage fee, redeployed for OKX USD₮0 on X Layer mainnet 2026-07-14 at `0xe3f11D89e585e2F0009ee5c6f105861525f70712` (see contracts/README.md)
 - [ ] Pick embedded wallet provider (Privy vs Web3Auth vs Coinbase)
 - [ ] ASP listing copy on the OKX marketplace (this is the storefront — treat it like the landing page)
 

@@ -12,14 +12,14 @@ test("usdtUnits: exact 6-decimal string arithmetic, no floats", () => {
   assert.equal(usdtUnits("1000000"), 1_000_000_000_000n);
 });
 
-const FWD = "0x16Aa17463fCD7201A403F42B257778dC84e7E025";
+const FWD = "0xe3f11D89e585e2F0009ee5c6f105861525f70712";
 const HASH = "0xaffb82ff02f584b69c3fb349a7ec7d9f8ea54cedd5db71d39133bcf050c47145";
 
 test("enc matches cast calldata for all three write shapes", () => {
   // cast calldata "approve(address,uint256)" <forwarder> 48000000
   assert.equal(
     enc(SEL.approve, FWD, 48_000_000n.toString(16)),
-    "0x095ea7b300000000000000000000000016aa17463fcd7201a403f42b257778dc84e7e0250000000000000000000000000000000000000000000000000000000002dc6c00",
+    "0x095ea7b3000000000000000000000000e3f11d89e585e2f0009ee5c6f105861525f707120000000000000000000000000000000000000000000000000000000002dc6c00",
   );
   // cast calldata "deposit(bytes32,uint256)" <hash> 48000000
   assert.equal(
@@ -43,7 +43,7 @@ function rig(chain) {
     agentId: "5021",
     rpcUrl: "stub://",
     forwarder: FWD,
-    usdt: "0x1E4a5963aBFD975d8c9021ce480b42188849D41d",
+    usdt: "0x779ded0c9e1022225f8e0630b35a9b54be713736",
     log: { log: () => {}, error: () => {} },
     emit: (type, payload) => calls.events.push({ type, ...payload }),
     cli: async (args) => {
