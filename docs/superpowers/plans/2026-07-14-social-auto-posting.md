@@ -621,8 +621,8 @@ Confirm nothing regressed across the backend before touching the web.
 
 - [ ] **Step 1: Run every new unit test**
 
-Run: `node --test backend/distribution/`
-Expected: PASS, all suites (select, oauth1, telegram, x).
+Run: `node --test backend/distribution/*.test.mjs backend/distribution/channels/*.test.mjs`
+Expected: PASS, 12 tests (select, oauth1, telegram, x). Note: `node --test <dir>` does not expand to the test files in Node 22, pass the globs explicitly.
 
 - [ ] **Step 2: Run the lifecycle e2e (needs the two services up)**
 
