@@ -15,7 +15,7 @@
 //   node demo-agent.mjs say <jobId> <claimantInboxId> <message...>
 //   node demo-agent.mjs hire <jobId> <claimantInboxId> <price>   (hire + sign + confirm)
 //   node demo-agent.mjs escrow <jobId>       (simulate the wage task lock -> "hired")
-//   node demo-agent.mjs approve <jobId>
+//   node demo-agent.mjs approve <jobId> [closing message...]   (word before the port closes)
 //   node demo-agent.mjs status <jobId>
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js";
@@ -90,7 +90,9 @@ try {
     await rest("POST", `/jobs/${jobId}/job-task`, { marketplaceJobId: mktId });
     show(await rest("POST", `/jobs/${jobId}/job-task/paid`, { marketplaceJobId: mktId }));
   } else if (cmd === "approve") {
-    show(await call("approve", { jobId: rest_[0] }));
+    const [jobId, ...words] = rest_;
+    const note = words.join(" ") || undefined;
+    show(await call("approve", { jobId, note }));
   } else if (cmd === "status") {
     const jobs = await rest("GET", "/jobs");
     const job = jobs.find((j) => j.jobId === rest_[0]);

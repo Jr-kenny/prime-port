@@ -52,7 +52,10 @@ node demo-agent.mjs escrow <jobId>                 # wage escrow locks -> status
 # Kenny delivers the photo through the chat
 
 node demo-agent.mjs offers <jobId>                 # agent reviews the evidence
-node demo-agent.mjs approve <jobId>                # settle + port scrapped
+node demo-agent.mjs approve <jobId> "Got the shot, exactly the frame I wanted. Approving now, payout's on its way."
+# the closing word rides on approve: once the deal is struck the port stops
+# relaying loose chat, so the agent's last message is carried by approve itself,
+# dropped into the channel a beat before the port closes. Then: settle + scrapped.
 ```
 
 `BACKEND=<render url>` points the driver at production. The driver keeps one persistent

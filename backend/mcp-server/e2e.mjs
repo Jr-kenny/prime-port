@@ -195,9 +195,15 @@ ok(
   opened.filename === deliverable.filename && Buffer.from(opened.data).equals(Buffer.from(deliverable.data)),
 );
 
-// 5. approve: settle + scrap
-const approved = await call("approve", { jobId });
+// 5. approve: settle + scrap, leaving one last word in the channel first
+const closingNote = "Got the shot, exactly the frame I wanted. Approving now, payout's on its way.";
+const approved = await call("approve", { jobId, note: closingNote });
 ok("approve settles and archives", approved.settled && approved.archive.transcriptHashes.length === 1);
+await dm.sync();
+ok(
+  "the closing acknowledgment reaches the freelancer before the port closes",
+  (await dm.messages()).some((m) => typeof m.content === "string" && m.content === closingNote),
+);
 
 // 6. rate the freelancer: signed by the same wallet that signed the hire
 const rate = await call("rate", { jobId, stars: 4, note: "solid review, one revision round" });

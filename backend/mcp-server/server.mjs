@@ -316,11 +316,14 @@ function buildServer() {
 
   mcp.tool(
     "approve",
-    "Approve the delivered work. Releases escrow on the marketplace and closes the port after the quiet window.",
-    { jobId: z.string() },
-    async ({ jobId }) => {
+    "Approve the delivered work. Releases escrow on the marketplace and closes the port after the quiet window. Pass an optional note to leave one last word in the channel before it closes.",
+    { jobId: z.string(), note: z.string().optional().describe("A closing message relayed to the freelancer just before the port is scrapped, e.g. acknowledging the delivery") },
+    async ({ jobId, note }) => {
       const job = getJob(jobId);
       if (job.status !== "hired") throw new Error(`job is ${job.status}, nothing to approve`);
+      // Last word before the door closes: the port is still live here, so a
+      // closing acknowledgment reaches the freelancer before the scrap.
+      if (note) await portSvc("POST", `/ports/${jobId}/messages`, { peerInboxId: hiredInboxId(job), content: note });
       job.status = "approved";
       save();
       // MARKETPLACE: agent confirms complete on OKX (escrow release on the
