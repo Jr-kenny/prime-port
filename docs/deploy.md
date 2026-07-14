@@ -99,6 +99,14 @@ the copier's badge (the token) opens only that one drawer.
    - `HERMES_NVIDIA_MODEL` (optional) changes the NVIDIA model. It defaults
      to `nvidia/nemotron-3-super-120b-a12b`, which supports long-context
      tool-driven agent work.
+   - `EXPECTED_OKX_AGENT_ID` = `5021`. Startup verifies that the restored
+     login can actually see this agent before starting the listener.
+   - For an identity registered through OnchainOS email login, add these four
+     base64-encoded secret files: `onchainos-keyring.enc.b64`,
+     `onchainos-machine-identity.b64`, `onchainos-session.json.b64`, and
+     `onchainos-wallets.json.b64`. They are copied into the writable runtime
+     and refreshed state is retained by `STATE_REMOTE`. The API-key wallet
+     login is not used for the listener when this bundle is present.
    - `PUBLIC_BASE_URL` = the public backend origin, for example
      `https://prime-port-latest.onrender.com`. The x402 challenge advertises
      `${PUBLIC_BASE_URL}/mcp/publish` as the paid resource.

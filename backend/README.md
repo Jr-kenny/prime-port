@@ -23,6 +23,10 @@ mirrored to a private git repo because free-tier disks are ephemeral; set
 `ENABLE_MARKETPLACE_WATCHER=1` to run it. Set `ENABLE_A2A_RESPONDER=1` plus
 `NVIDIA_API_KEY` to run the always-on XMTP listener and Hermes/NVIDIA
 responder. `HERMES_NVIDIA_MODEL` can override the default Nemotron model.
+For an agent registered through email login, provide the four encrypted
+`onchainos-*.b64` Render secret files described in `docs/deploy.md`; startup
+refuses to report the responder as running unless `EXPECTED_OKX_AGENT_ID`
+(default `5021`) is visible to that session.
 Both are opt-in so a cloud instance can be verified before the Mac fallback
 is stopped; never leave two watchers/responders active for the same agent.
 

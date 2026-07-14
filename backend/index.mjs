@@ -11,7 +11,7 @@
 // the watcher stays off and everything else runs normally.
 import { createServer, request } from "node:http";
 import { spawn, execFile } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { restoreState, startBackupLoop } from "./state-sync.mjs";
 
@@ -23,6 +23,29 @@ const runtimeStatus = {
   marketplaceWatcher: "disabled",
   a2aResponder: "disabled",
 };
+
+const ONCHAINOS_SESSION_FILES = ["keyring.enc", "machine-identity", "session.json", "wallets.json"];
+const onchainosHome = `${process.env.HOME ?? "/app"}/.onchainos`;
+
+// Render secret files are text-only, so the encrypted OnchainOS email-login
+// bundle is uploaded as base64. Restore it only when state-sync did not
+// already restore a newer refreshed session.
+function restoreOnchainosSessionSecrets() {
+  if (ONCHAINOS_SESSION_FILES.every((name) => existsSync(`${onchainosHome}/${name}`))) return true;
+  const secretDir = process.env.RENDER_SECRET_DIR ?? "/etc/secrets";
+  const sources = ONCHAINOS_SESSION_FILES.map((name) => `${secretDir}/onchainos-${name}.b64`);
+  if (!sources.some(existsSync)) return false;
+  if (!sources.every(existsSync)) throw new Error("incomplete encrypted OnchainOS session secret bundle");
+  mkdirSync(onchainosHome, { recursive: true });
+  ONCHAINOS_SESSION_FILES.forEach((name, index) => {
+    const encoded = readFileSync(sources[index], "utf8").trim();
+    writeFileSync(`${onchainosHome}/${name}`, Buffer.from(encoded, "base64"), { mode: 0o600 });
+  });
+  console.log("[prime-port] restored encrypted OnchainOS email session from Render secrets");
+  return true;
+}
+
+const hasOnchainosEmailSession = restoreOnchainosSessionSecrets();
 
 // Each service reads process.env.PORT with its own fallback (8791 / 8792).
 // Clearing PORT before import lets both fall back and the proxy own APP_PORT.
@@ -72,14 +95,37 @@ createServer((req, res) => {
 let okxLoginPromise;
 function ensureOkxLogin() {
   if (!okxLoginPromise) {
-    okxLoginPromise = promisify(execFile)("onchainos", ["wallet", "login", "--force"], { timeout: 120_000 })
-      .then(() => console.log("[prime-port] onchainos wallet login ok (AK)"))
+    const command = hasOnchainosEmailSession
+      ? promisify(execFile)("onchainos", ["wallet", "status"], { timeout: 120_000 }).then(({ stdout }) => {
+        const status = JSON.parse(stdout);
+        if (!status?.ok || !status?.data?.loggedIn || status?.data?.lastLoginMode !== "email") {
+          throw new Error("restored OnchainOS email session is not logged in");
+        }
+        console.log(`[prime-port] onchainos email session ready (${status.data.email || "email account"})`);
+      })
+      : promisify(execFile)("onchainos", ["wallet", "login", "--force"], { timeout: 120_000 })
+        .then(() => console.log("[prime-port] onchainos wallet login ok (AK)"));
+    okxLoginPromise = command
       .catch((error) => {
         okxLoginPromise = undefined;
         throw error;
       });
   }
   return okxLoginPromise;
+}
+
+async function assertExpectedAgentVisible(env) {
+  const expected = String(process.env.EXPECTED_OKX_AGENT_ID ?? "5021").replace(/^#/, "");
+  const { stdout } = await promisify(execFile)("onchainos", ["agent", "get", "--page", "1", "--page-size", "50"], {
+    env,
+    timeout: 120_000,
+  });
+  const payload = JSON.parse(stdout);
+  const agents = (payload?.data?.list ?? []).flatMap((account) => account?.agentList ?? []);
+  if (!agents.some((agent) => String(agent.agentId) === expected)) {
+    throw new Error(`expected OKX agent #${expected} is not visible in this login`);
+  }
+  return expected;
 }
 
 // OKX marketplace watcher: opt-in so a cloud deployment can be brought up
@@ -168,11 +214,12 @@ async function startA2AResponder() {
   try {
     runtimeStatus.a2aResponder = "starting";
     await ensureOkxLogin();
+    const agentId = await assertExpectedAgentVisible(env);
     await promisify(execFile)("onchainos", ["preflight", "--skill-version", "4.2.4"], { env, timeout: 180_000 });
     await promisify(execFile)("hermes", ["version"], { env, timeout: 30_000 });
     await promisify(execFile)("okx-a2a", ["config", "provider", "--provider", "hermes"], { env, timeout: 30_000 });
     await promisify(execFile)("okx-a2a", ["config", "permissions", "--preset", "bypass"], { env, timeout: 30_000 });
-    console.log(`[prime-port] cloud Hermes/NVIDIA A2A responder configured (${hermesModel})`);
+    console.log(`[prime-port] cloud Hermes/NVIDIA A2A responder configured for #${agentId} (${hermesModel})`);
   } catch (error) {
     runtimeStatus.a2aResponder = "retrying-setup";
     console.error(`[prime-port] cloud A2A setup failed, retrying in 60s: ${error.message.split("\n")[0]}`);
