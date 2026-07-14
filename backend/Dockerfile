@@ -39,7 +39,8 @@ RUN cd commitment && npm ci --omit=dev \
 COPY commitment/commitment.mjs commitment/
 COPY port-service/service.mjs port-service/
 COPY mcp-server/server.mjs mcp-server/
-COPY distribution/poster.mjs distribution/
+COPY distribution/poster.mjs distribution/select.mjs distribution/
+COPY distribution/channels/oauth1.mjs distribution/channels/telegram.mjs distribution/channels/x.mjs distribution/channels/
 COPY marketplace-watcher/watcher.mjs marketplace-watcher/wage-release.mjs marketplace-watcher/
 COPY payout/register-at-hire.mjs payout/
 COPY index.mjs state-sync.mjs ./
