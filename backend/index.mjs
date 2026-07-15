@@ -23,6 +23,7 @@ const runtimeStatus = {
   marketplaceWatcher: "disabled",
   a2aResponder: "disabled",
 };
+let hermesInferenceVerified = false;
 
 const ONCHAINOS_SESSION_FILES = ["keyring.enc", "machine-identity", "session.json", "wallets.json"];
 const onchainosHome = `${process.env.HOME ?? "/app"}/.onchainos`;
@@ -219,6 +220,25 @@ async function startA2AResponder() {
     await promisify(execFile)("hermes", ["version"], { env, timeout: 30_000 });
     await promisify(execFile)("okx-a2a", ["config", "provider", "--provider", "hermes"], { env, timeout: 30_000 });
     await promisify(execFile)("okx-a2a", ["config", "permissions", "--preset", "bypass"], { env, timeout: 30_000 });
+    if (!hermesInferenceVerified) {
+      runtimeStatus.a2aResponder = "testing-inference";
+      const { stdout } = await promisify(execFile)(
+        "hermes",
+        [
+          "--oneshot",
+          "Reply with exactly PRIME_PORT_HERMES_OK and nothing else.",
+          "--model", hermesModel,
+          "--provider", "nvidia",
+          "--ignore-rules",
+        ],
+        { env, timeout: 180_000 },
+      );
+      if (!stdout.includes("PRIME_PORT_HERMES_OK")) {
+        throw new Error("Hermes/NVIDIA inference smoke test returned an unexpected response");
+      }
+      hermesInferenceVerified = true;
+      console.log("[prime-port] Hermes/NVIDIA inference smoke test passed");
+    }
     console.log(`[prime-port] cloud Hermes/NVIDIA A2A responder configured for #${agentId} (${hermesModel})`);
   } catch (error) {
     runtimeStatus.a2aResponder = "retrying-setup";
