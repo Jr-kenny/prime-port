@@ -19,7 +19,7 @@ async function waitUntilReady(child) {
   throw new Error(`server did not start: ${stderr}`);
 }
 
-test("paid publish advertises the exact 1 USDt0 X Layer payment", async (t) => {
+test("paid publish advertises the exact 1 USDt0 X Layer payment for discovery and execution", async (t) => {
   const child = spawn(process.execPath, ["server.mjs"], {
     cwd: new URL(".", import.meta.url),
     env: {
@@ -36,6 +36,15 @@ test("paid publish advertises the exact 1 USDt0 X Layer payment", async (t) => {
   });
   await waitUntilReady(child);
 
+  const discoveryResponse = await fetch(`${endpoint}/mcp/publish`, {
+    headers: { accept: "application/json" },
+  });
+  assert.equal(discoveryResponse.status, 402);
+
+  const discoveryEncoded = discoveryResponse.headers.get("payment-required");
+  assert.ok(discoveryEncoded, "GET discovery includes the PAYMENT-REQUIRED header");
+  const discoveryChallenge = JSON.parse(Buffer.from(discoveryEncoded, "base64").toString("utf8"));
+
   const response = await fetch(`${endpoint}/mcp/publish`, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
@@ -46,6 +55,7 @@ test("paid publish advertises the exact 1 USDt0 X Layer payment", async (t) => {
   const encoded = response.headers.get("payment-required");
   assert.ok(encoded, "PAYMENT-REQUIRED header is present");
   const challenge = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+  assert.deepEqual(discoveryChallenge, challenge);
   assert.equal(challenge.x402Version, 2);
   assert.equal(challenge.resource.url, `${endpoint}/mcp/publish`);
   assert.deepEqual(challenge.accepts.map(({ scheme, network, amount, asset, payTo }) => ({

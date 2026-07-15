@@ -555,20 +555,25 @@ const facilitator = process.env.X402_OFFLINE_CHALLENGE === "1"
   : okxFacilitator;
 const paymentServer = new x402ResourceServer(facilitator)
   .register("eip155:196", new ExactEvmScheme());
+const publishPaymentRequirements = {
+  accepts: [{
+    scheme: "exact",
+    network: "eip155:196",
+    payTo: PAY_TO_ADDRESS,
+    price: PUBLISH_PRICE,
+    maxTimeoutSeconds: 300,
+  }],
+  description: "Publish a fully specified human job and create its private Prime Port",
+  mimeType: "application/json",
+  resource: `${PUBLIC_BASE_URL}/mcp/publish`,
+};
 const requirePublishPayment = paymentMiddleware(
   {
-    "POST /mcp/publish": {
-      accepts: [{
-        scheme: "exact",
-        network: "eip155:196",
-        payTo: PAY_TO_ADDRESS,
-        price: PUBLISH_PRICE,
-        maxTimeoutSeconds: 300,
-      }],
-      description: "Publish a fully specified human job and create its private Prime Port",
-      mimeType: "application/json",
-      resource: `${PUBLIC_BASE_URL}/mcp/publish`,
-    },
+    // OKX's marketplace discovery probe checks the advertised endpoint with
+    // GET before it prepares the paid POST. Both methods must advertise the
+    // same challenge, while only POST is allowed to create a job.
+    "GET /mcp/publish": publishPaymentRequirements,
+    "POST /mcp/publish": publishPaymentRequirements,
   },
   paymentServer,
 );
@@ -579,6 +584,10 @@ app.use(express.json({ limit: "2mb" }));
 // The one paid operation. Discovery and every operation on an existing port
 // remain on /mcp without another charge. Reaching this handler means the OKX
 // middleware verified the payment authorization for this exact request.
+app.get("/mcp/publish", requirePublishPayment, (_req, res) => {
+  res.status(405).json({ error: "Use POST with the complete job fields to publish." });
+});
+
 app.post("/mcp/publish", requirePublishPayment, async (req, res) => {
   try {
     const args = paidPublishShape.parse(req.body);
