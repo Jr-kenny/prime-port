@@ -19,11 +19,12 @@ import { execFile } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { createWageRelease } from "./wage-release.mjs";
+import { isX402Task, taskBelongsToAgent } from "./task-routing.mjs";
 import { openingOfferFromTaskAmount } from "../listing-price.mjs";
 import { parseMarketplaceBrief, REQUIRED_BRIEF_TEMPLATE } from "../brief-policy.mjs";
 
 const run = promisify(execFile);
-const AGENT_ID = process.env.AGENT_ID ?? "5021";
+const AGENT_ID = process.env.AGENT_ID ?? process.env.EXPECTED_OKX_AGENT_ID ?? "5021";
 const ROLE = process.env.ROLE ?? "asp";
 const POLL_MS = Number(process.env.POLL_MS ?? 30_000);
 const HEARTBEAT_EVERY = Number(process.env.HEARTBEAT_EVERY ?? 10); // cycles
@@ -307,17 +308,34 @@ async function pollOnce() {
     cli(["agent", "task-in-progress", "--agent-ids", AGENT_ID]),
   ]);
   const details = new Map((detailData.providerTasks ?? []).map((task) => [task.jobId, task]));
-  for (const summary of data.tasks ?? []) {
+  for (const summary of (data.tasks ?? []).filter((task) => taskBelongsToAgent(task, AGENT_ID))) {
     const detail = details.get(summary.jobId) ?? {};
     const task = {
       ...summary,
       description: detail.description ?? summary.description,
       counterpartyAgentId: summary.counterpartyAgentId ?? detail.buyerAgentId,
+      paymentMode: detail.paymentMode ?? summary.paymentMode,
     };
     const rec = (state.tasks[task.jobId] ??= { firstSeenAt: Date.now(), done: {} });
     if (rec.statusCode === undefined) {
       emit("mkt-task-designated", { jobId: task.jobId, title: task.title, counterparty: task.counterpartyAgentId, budget: `${task.tokenAmount} ${task.tokenSymbol}` });
       console.log(`[watcher] new task: "${task.title}" (${task.jobId.slice(0, 10)}…) from agent ${task.counterpartyAgentId}`);
+    }
+    // API-service purchases settle directly against the published endpoint.
+    // They are visible in active-tasks, but applying/invoicing is the escrow
+    // provider lifecycle and is invalid for paymentMode=3 (x402).
+    if (isX402Task(task)) {
+      rec.kind = "x402";
+      Object.assign(rec, {
+        statusCode: task.statusCode,
+        title: task.title,
+        tokenAmount: task.tokenAmount,
+        tokenSymbol: task.tokenSymbol,
+        paymentMode: task.paymentMode,
+        lastSeenAt: Date.now(),
+      });
+      for (const verb of ["apply", "invoice", "deliver"]) delete pending[`${task.jobId}:${verb}`];
+      continue;
     }
     // A fresh designation is either the wage for a signed hire (it carries
     // the commitment hash) or a new publication purchase. Publication tasks
