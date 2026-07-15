@@ -28,7 +28,7 @@ RUN curl -fsSL -o /usr/local/bin/onchainos \
 # OKX A2A receives marketplace conversations over XMTP. Hermes is its
 # server-side responder and uses NVIDIA NIM through NVIDIA_API_KEY.
 ARG HERMES_VERSION=v2026.7.7.2
-RUN npm install -g @okxweb3/a2a-node@0.1.8 \
+RUN npm install -g @okxweb3/a2a-node@0.1.9 \
  && python3 -m venv /opt/hermes \
  && /opt/hermes/bin/pip install --no-cache-dir \
       "git+https://github.com/NousResearch/hermes-agent.git@${HERMES_VERSION}" \
@@ -50,7 +50,7 @@ COPY port-service/service.mjs port-service/
 COPY mcp-server/server.mjs mcp-server/
 COPY distribution/poster.mjs distribution/select.mjs distribution/
 COPY distribution/channels/oauth1.mjs distribution/channels/telegram.mjs distribution/channels/x.mjs distribution/channels/
-COPY marketplace-watcher/watcher.mjs marketplace-watcher/wage-release.mjs marketplace-watcher/
+COPY marketplace-watcher/watcher.mjs marketplace-watcher/wage-release.mjs marketplace-watcher/task-routing.mjs marketplace-watcher/
 COPY payout/register-at-hire.mjs payout/
 COPY index.mjs state-sync.mjs listing-price.mjs brief-policy.mjs ./
 
