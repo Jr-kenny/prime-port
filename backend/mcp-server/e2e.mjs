@@ -67,6 +67,8 @@ const mktPublishTask = `mkt-pub-${Date.now()}`;
 const pub = await call("publish", {
   title: "Review our docs, 700 words",
   criteria: "Write a 700-word review of the Prime Port docs. Plain English.",
+  description: "Review the Prime Port documentation from a new user's perspective and identify unclear sections.",
+  deliverables: "A 700-word written review in plain English.",
   price: "40",
   currency: "USDT",
   deadline: Math.floor(Date.now() / 1000) + 86400 * 3,
@@ -235,6 +237,8 @@ ok("REST profile matches the MCP tool", JSON.stringify(restProfile) === JSON.str
 const pub2 = await call("publish", {
   title: "Second job for the same freelancer",
   criteria: "Anything.",
+  description: "Prepare a concise written assessment of the supplied material and explain the main findings.",
+  deliverables: "A written assessment containing the main findings.",
   price: "10",
   currency: "USDT",
   deadline: Math.floor(Date.now() / 1000) + 86400,

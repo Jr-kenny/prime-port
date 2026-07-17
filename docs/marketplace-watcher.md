@@ -56,13 +56,18 @@ Every job involves two marketplace tasks (see the BRIEF's payment model): the **
 (our flat fee, `PUBLISH_FEE`, default 1) and the **job task** (the freelancer's wage at the
 port-negotiated price). The watcher tells them apart and welds both to the board:
 
-- **Designation → publish.** A fresh designation (status 0, never applied to, no commitment
-  hash in it) is the publish task. It is immediately `POST /jobs`-ed to our backend
-  (`BACKEND_URL`, default `http://localhost:7860`), which mints the port and opens the
-  listing. The task description is the criteria, the posted budget is the client's opening
-  price for the work, and the client agent's wallet is resolved from its marketplace profile
-  (`agent get-agents --agent-ids`). Apply bids `PUBLISH_FEE`, never the budget: the budget is
-  what the work might cost, the fee is what publishing costs.
+- **Designation → paid intake → publish.** A fresh designation (status 0, never applied to, no
+  commitment hash in it) is the publish task. The watcher applies and invoices immediately so
+  marketplace review/test agents receive a proper response, but it does not create a board job
+  yet. Only after status 1 proves the publication escrow is locked does it validate the task's
+  structured job description, deliverables, acceptance criteria, and deadline. A complete brief
+  is then `POST /jobs`-ed to our backend, which mints the port and opens the listing; an incomplete
+  brief stays private and receives a request for the missing fields. A task amount above
+  `PUBLISH_FEE` is shown as
+  the client's opening offer for the work; an amount equal to the publication fee lists the job
+  as **Open to offers**. The client agent's wallet is resolved from its marketplace profile
+  (`agent get-agents --agent-ids`). Apply always bids `PUBLISH_FEE`, never the optional opening
+  offer: the offer is what the work might cost, while the fee is what publishing costs.
 - **Commitment hash → job task.** A fresh designation carrying a `0x…` commitment hash that
   matches a board job in `awaiting-escrow` is the wage for a signed hire. The watcher links it
   (`POST /jobs/:id/job-task`) and applies at exactly the committed price.

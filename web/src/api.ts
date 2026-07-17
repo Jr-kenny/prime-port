@@ -3,6 +3,8 @@ export type PublicJob = {
   jobId: string;
   status: "open" | "hiring" | "awaiting-freelancer-signature" | "awaiting-escrow" | "hired" | "approved" | "settled";
   title: string;
+  description?: string;
+  deliverables?: string;
   criteria: string;
   // null when the job is listed open to offers: no anchor price, the
   // freelancer names their rate and it's settled in negotiation.
@@ -22,6 +24,11 @@ export type PublicJob = {
     };
   };
   createdAt: number;
+  publishTask?: {
+    marketplaceJobId: string;
+    paidAt: number | null;
+    keyDeliveredAt: number | null;
+  };
 };
 
 export type FreelancerProfile = {
@@ -42,7 +49,8 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
   return j as T;
 }
 
-export const listJobs = () => api<PublicJob[]>("GET", "/jobs");
+export const listJobs = () =>
+  api<PublicJob[]>("GET", "/jobs").then((jobs) => jobs.filter((job) => !job.publishTask || Boolean(job.publishTask.paidAt)));
 export const claimJob = (jobId: string, claim: { inboxId: string; wallet: string; payoutAddress?: string; name: string }) =>
   api<{ claimed: boolean; portInboxId: string }>("POST", `/jobs/${jobId}/claims`, claim);
 export const countersignHire = (jobId: string, signature: string) =>

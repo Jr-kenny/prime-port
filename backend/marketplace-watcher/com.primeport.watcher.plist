@@ -28,7 +28,7 @@
     <!-- launchd's login shell skips .zshrc, so fnm's node bin (where okx-a2a
          lives) never reaches PATH on its own; pin the whole PATH here. -->
     <key>PATH</key>
-    <string>/Users/user/.local/share/fnm/node-versions/v22.22.2/installation/bin:/Users/user/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <string>/Applications/ChatGPT.app/Contents/Resources:/Users/user/.local/share/fnm/node-versions/v22.22.2/installation/bin:/Users/user/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <!-- The deployed board: the one existing Render service (free hours are
          capped, so this URL is it until at least August). -->
     <key>BACKEND_URL</key>

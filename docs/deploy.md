@@ -90,6 +90,23 @@ the copier's badge (the token) opens only that one drawer.
      the container runs `onchainos wallet login` (API-key mode) at boot.
      Enter these in the Koyeb dashboard yourself; they control the agent
      wallet.
+   - `ENABLE_MARKETPLACE_WATCHER` = `1` only after the cloud watcher is ready
+     and the local watcher is stopped. This explicit cutover gate prevents
+     duplicate applies/invoices.
+   - `ENABLE_A2A_RESPONDER` = `1` enables the always-on OKX A2A/XMTP listener.
+   - `NVIDIA_API_KEY` (secret) authenticates the Hermes responder against
+     NVIDIA NIM. Create it at `build.nvidia.com`; no OpenAI account is used.
+   - `HERMES_NVIDIA_MODEL` (optional) changes the NVIDIA model. It defaults
+     to `nvidia/nemotron-3-super-120b-a12b`, which supports long-context
+     tool-driven agent work.
+   - `EXPECTED_OKX_AGENT_ID` = `5021`. Startup verifies that the restored
+     login can actually see this agent before starting the listener.
+   - For an identity registered through OnchainOS email login, add these four
+     base64-encoded secret files: `onchainos-keyring.enc.b64`,
+     `onchainos-machine-identity.b64`, `onchainos-session.json.b64`, and
+     `onchainos-wallets.json.b64`. They are copied into the writable runtime
+     and refreshed state is retained by `STATE_REMOTE`. The API-key wallet
+     login is not used for the listener when this bundle is present.
    - `PUBLIC_BASE_URL` = the public backend origin, for example
      `https://prime-port-latest.onrender.com`. The x402 challenge advertises
      `${PUBLIC_BASE_URL}/mcp/publish` as the paid resource.
@@ -129,6 +146,12 @@ task history survives restarts.
 one locally (`node watcher.mjs run` or the launchd plist) against the same
 agent: both would vend and apply to the same designations. The local mode
 and the plist remain as a fallback for when the container has no OKX keys.
+
+The same single-active rule applies to the A2A responder. Bring the cloud
+listener up with `ENABLE_A2A_RESPONDER=1`, verify `/health` reports it as
+`running` and complete a real test conversation, then stop the Mac
+`com.okx.a2a` LaunchAgent. Its state lives under `OKX_AGENT_TASK_HOME` and is
+included in the private `STATE_REMOTE` mirror.
 
 In everyday terms: the marketplace lookout moves into the same free cloud
 computer as everything else, and it gets its own OKX login there, made from
