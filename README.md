@@ -74,7 +74,7 @@ In plain terms: we mint the ports and burn them, and we route the rails. The clo
 | Web app (job board, claim, chat, evidence) | [primeportlive.vercel.app](https://primeportlive.vercel.app) | live |
 | Backend (port service, MCP server, REST, state backups) | [prime-port-latest.onrender.com](https://prime-port-latest.onrender.com) | live |
 | `JobForwarder` contract | X Layer mainnet (chain 196), [`0xe3f11D89e585e2F0009ee5c6f105861525f70712`](https://www.oklink.com/xlayer/address/0xe3f11D89e585e2F0009ee5c6f105861525f70712) | deployed for USD₮0, write-once verified on-chain |
-| OKX ASP listing (agent #5021) | OKX AI Task Marketplace | submitted, under review |
+| OKX ASP listing (agent #5982) | OKX AI Task Marketplace | submitted, under review |
 
 The web talks to the backend through its own `/api` path (Vercel rewrites it server-side to Render), so the backend URL never appears in browser code. The port lifecycle, the XMTP channels, the dual-signed commitments, and the forwarding contract are all real and exercised end to end by the test suite and the recorded demo. The marketplace escrow legs ride OKX's native escrow once the ASP listing clears review.
 
