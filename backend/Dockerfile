@@ -38,7 +38,8 @@ RUN npm install -g @okxweb3/a2a-node@${OKX_A2A_VERSION} \
  && npm pack "@okxweb3/a2a-hermes@${OKX_A2A_VERSION}" --pack-destination "$plugin_work" \
  && tar -xzf "$plugin_work"/okxweb3-a2a-hermes-*.tgz -C "$plugin_work" \
  && tar -xzf "$plugin_work"/package/dist/okx-a2a-hermes-plugin-*.tar.gz -C "$plugin_work" \
- && bash "$plugin_work"/okx-a2a-hermes-plugin/scripts/install-or-upgrade.sh \
+ && mkdir -p /app/hermes \
+ && HERMES_HOME=/app/hermes bash "$plugin_work"/okx-a2a-hermes-plugin/scripts/install-or-upgrade.sh \
       --target /app/hermes/plugins/platforms/okx-a2a \
  && rm -rf "$plugin_work"
 
