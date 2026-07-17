@@ -262,9 +262,14 @@ async function startA2AResponder() {
     const agentId = await assertExpectedAgentVisible(env);
     await promisify(execFile)("onchainos", ["preflight", "--skill-version", "4.2.4"], { env, timeout: 180_000 });
     await promisify(execFile)("hermes", ["version"], { env, timeout: 30_000 });
+    await promisify(execFile)(
+      "okx-a2a",
+      ["ai-provider", "set", "--provider", "hermes", "--json"],
+      { env, timeout: 30_000 },
+    );
     const { stdout: doctorStdout } = await promisify(execFile)(
       "okx-a2a",
-      ["doctor", "--fix", "--json"],
+      ["doctor", "--fix", "--non-interactive", "--target", "hermes", "--json"],
       { env, timeout: 180_000 },
     );
     const doctor = JSON.parse(doctorStdout.trim());
