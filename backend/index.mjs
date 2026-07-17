@@ -25,6 +25,28 @@ const runtimeStatus = {
 };
 let hermesInferenceVerified = false;
 
+const bytesToMiB = (bytes) => bytes == null ? null : Math.round((bytes / 1024 / 1024) * 10) / 10;
+const readCgroupBytes = (path) => {
+  try {
+    const value = readFileSync(path, "utf8").trim();
+    return value === "max" ? null : Number(value);
+  } catch {
+    return null;
+  }
+};
+const memoryStatus = () => {
+  const usage = process.memoryUsage();
+  return {
+    processRssMiB: bytesToMiB(usage.rss),
+    processHeapUsedMiB: bytesToMiB(usage.heapUsed),
+    containerUsedMiB: bytesToMiB(readCgroupBytes("/sys/fs/cgroup/memory.current")),
+    containerLimitMiB: bytesToMiB(readCgroupBytes("/sys/fs/cgroup/memory.max")),
+  };
+};
+const serviceReady = () =>
+  (!isEnabled(process.env.ENABLE_MARKETPLACE_WATCHER) || runtimeStatus.marketplaceWatcher === "running")
+  && (!isEnabled(process.env.ENABLE_A2A_RESPONDER) || runtimeStatus.a2aResponder === "running");
+
 const ONCHAINOS_SESSION_FILES = ["keyring.enc", "machine-identity", "session.json", "wallets.json"];
 const onchainosHome = `${process.env.HOME ?? "/app"}/.onchainos`;
 
@@ -72,7 +94,7 @@ createServer((req, res) => {
   const path = new URL(req.url, "http://x").pathname;
   if (path === "/" || path === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
-    return res.end(JSON.stringify({ ok: true, service: "prime-port", components: runtimeStatus }));
+    return res.end(JSON.stringify({ ok: serviceReady(), service: "prime-port", components: runtimeStatus, memory: memoryStatus() }));
   }
   const port = upstream(path);
   if (!port) {
@@ -116,7 +138,7 @@ function ensureOkxLogin() {
 }
 
 async function assertExpectedAgentVisible(env) {
-  const expected = String(process.env.EXPECTED_OKX_AGENT_ID ?? "5021").replace(/^#/, "");
+  const expected = String(process.env.EXPECTED_OKX_AGENT_ID ?? "5982").replace(/^#/, "");
   const { stdout } = await promisify(execFile)("onchainos", ["agent", "get", "--page", "1", "--page-size", "50"], {
     env,
     timeout: 120_000,
@@ -169,6 +191,28 @@ async function startWatcher() {
 // A2A/XMTP listener + Hermes responder. Hermes talks to NVIDIA NIM through
 // its first-class OpenAI-compatible provider, so the cloud worker needs no
 // desktop session and no OpenAI account. Secrets stay in environment vars.
+function scheduleA2ARecycle(env, recycleMs) {
+  const recycleTimer = setTimeout(async () => {
+    runtimeStatus.a2aResponder = "recycling";
+    console.log(`[prime-port] recycling cloud A2A responder after ${Math.round(recycleMs / 60_000)}m to bound memory`);
+    try {
+      await promisify(execFile)(
+        "okx-a2a",
+        ["daemon", "restart", "--provider", "hermes"],
+        { env, timeout: 180_000 },
+      );
+      console.log("[prime-port] cloud A2A responder recycle complete");
+      runtimeStatus.a2aResponder = "running";
+      scheduleA2ARecycle(env, recycleMs);
+    } catch (error) {
+      runtimeStatus.a2aResponder = "retrying-setup";
+      console.error(`[prime-port] cloud A2A recycle failed, repairing in 60s: ${error.message.split("\n")[0]}`);
+      setTimeout(startA2AResponder, 60_000).unref();
+    }
+  }, recycleMs);
+  recycleTimer.unref();
+}
+
 async function startA2AResponder() {
   if (!isEnabled(process.env.ENABLE_A2A_RESPONDER)) {
     runtimeStatus.a2aResponder = "disabled";
@@ -218,8 +262,22 @@ async function startA2AResponder() {
     const agentId = await assertExpectedAgentVisible(env);
     await promisify(execFile)("onchainos", ["preflight", "--skill-version", "4.2.4"], { env, timeout: 180_000 });
     await promisify(execFile)("hermes", ["version"], { env, timeout: 30_000 });
-    await promisify(execFile)("okx-a2a", ["config", "provider", "--provider", "hermes"], { env, timeout: 30_000 });
-    await promisify(execFile)("okx-a2a", ["config", "permissions", "--preset", "bypass"], { env, timeout: 30_000 });
+    const { stdout: doctorStdout } = await promisify(execFile)(
+      "okx-a2a",
+      ["doctor", "--fix", "--json"],
+      { env, timeout: 180_000 },
+    );
+    const doctor = JSON.parse(doctorStdout.trim());
+    const doctorReady = doctor.ready ?? doctor.data?.ready;
+    if (doctorReady !== true) {
+      const details = [
+        doctor.userMessage ?? doctor.data?.userMessage,
+        ...(doctor.nextActions ?? doctor.data?.nextActions ?? []).map((action) =>
+          typeof action === "string" ? action : [action.why, action.command].filter(Boolean).join(": "),
+        ),
+      ].filter(Boolean).join(" | ");
+      throw new Error(`OKX A2A doctor did not report ready${details ? `: ${details}` : ""}`);
+    }
     if (!hermesInferenceVerified) {
       runtimeStatus.a2aResponder = "testing-inference";
       const { stdout } = await promisify(execFile)(
@@ -247,14 +305,10 @@ async function startA2AResponder() {
     return;
   }
 
-  const listener = spawn("okx-a2a", ["run"], { stdio: "inherit", env });
   runtimeStatus.a2aResponder = "running";
-  listener.on("exit", (code) => {
-    okxLoginPromise = undefined;
-    runtimeStatus.a2aResponder = "restarting";
-    console.error(`[prime-port] cloud A2A responder exited (code ${code}), restarting in 30s`);
-    setTimeout(startA2AResponder, 30_000);
-  });
+  const configuredRecycleMs = Number(process.env.A2A_RECYCLE_MS ?? 4 * 60 * 60 * 1000);
+  const recycleMs = Number.isFinite(configuredRecycleMs) && configuredRecycleMs > 0 ? configuredRecycleMs : 0;
+  if (recycleMs > 0) scheduleA2ARecycle(env, recycleMs);
 }
 
 startWatcher();

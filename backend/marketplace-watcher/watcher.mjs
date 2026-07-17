@@ -24,7 +24,7 @@ import { openingOfferFromTaskAmount } from "../listing-price.mjs";
 import { parseMarketplaceBrief, REQUIRED_BRIEF_TEMPLATE } from "../brief-policy.mjs";
 
 const run = promisify(execFile);
-const AGENT_ID = process.env.AGENT_ID ?? process.env.EXPECTED_OKX_AGENT_ID ?? "5021";
+const AGENT_ID = process.env.AGENT_ID ?? process.env.EXPECTED_OKX_AGENT_ID ?? "5982";
 const ROLE = process.env.ROLE ?? "asp";
 const POLL_MS = Number(process.env.POLL_MS ?? 30_000);
 const HEARTBEAT_EVERY = Number(process.env.HEARTBEAT_EVERY ?? 10); // cycles
