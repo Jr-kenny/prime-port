@@ -244,7 +244,7 @@ async function startA2AResponder() {
   mkdirSync(hermesHome, { recursive: true });
   writeFileSync(
     `${hermesHome}/config.yaml`,
-    `model:\n  provider: nvidia\n  default: ${hermesModel}\n`,
+    `model:\n  provider: nvidia\n  default: ${hermesModel}\nplugins:\n  enabled:\n    - okx-a2a\n`,
     { mode: 0o600 },
   );
   const env = {

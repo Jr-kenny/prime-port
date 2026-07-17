@@ -28,11 +28,19 @@ RUN curl -fsSL -o /usr/local/bin/onchainos \
 # OKX A2A receives marketplace conversations over XMTP. Hermes is its
 # server-side responder and uses NVIDIA NIM through NVIDIA_API_KEY.
 ARG HERMES_VERSION=v2026.7.7.2
-RUN npm install -g @okxweb3/a2a-node@0.1.9 \
+ARG OKX_A2A_VERSION=0.1.9
+RUN npm install -g @okxweb3/a2a-node@${OKX_A2A_VERSION} \
  && python3 -m venv /opt/hermes \
  && /opt/hermes/bin/pip install --no-cache-dir \
       "git+https://github.com/NousResearch/hermes-agent.git@${HERMES_VERSION}" \
- && ln -s /opt/hermes/bin/hermes /usr/local/bin/hermes
+ && ln -s /opt/hermes/bin/hermes /usr/local/bin/hermes \
+ && plugin_work="$(mktemp -d)" \
+ && npm pack "@okxweb3/a2a-hermes@${OKX_A2A_VERSION}" --pack-destination "$plugin_work" \
+ && tar -xzf "$plugin_work"/okxweb3-a2a-hermes-*.tgz -C "$plugin_work" \
+ && tar -xzf "$plugin_work"/package/dist/okx-a2a-hermes-plugin-*.tar.gz -C "$plugin_work" \
+ && bash "$plugin_work"/okx-a2a-hermes-plugin/scripts/install-or-upgrade.sh \
+      --target /app/hermes/plugins/platforms/okx-a2a \
+ && rm -rf "$plugin_work"
 
 WORKDIR /app
 
