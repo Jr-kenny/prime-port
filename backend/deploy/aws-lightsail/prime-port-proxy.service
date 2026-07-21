@@ -1,0 +1,22 @@
+[Unit]
+Description=Prime Port HTTPS proxy
+After=docker.service network-online.target prime-port.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=180
+ExecStartPre=-/usr/bin/docker rm -f prime-port-proxy
+ExecStartPre=/usr/bin/docker pull caddy:2.10-alpine
+ExecStart=/usr/bin/docker run --name prime-port-proxy \
+  --network host \
+  --volume /opt/prime-port/Caddyfile:/etc/caddy/Caddyfile:ro \
+  --volume /var/lib/prime-port/caddy-data:/data \
+  --volume /var/lib/prime-port/caddy-config:/config \
+  caddy:2.10-alpine
+ExecStop=/usr/bin/docker stop -t 20 prime-port-proxy
+
+[Install]
+WantedBy=multi-user.target

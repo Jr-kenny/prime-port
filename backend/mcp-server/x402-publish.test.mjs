@@ -19,7 +19,7 @@ async function waitUntilReady(child) {
   throw new Error(`server did not start: ${stderr}`);
 }
 
-test("paid publish advertises the exact 1 USDt0 X Layer payment for discovery and execution", async (t) => {
+test("paid publish advertises the exact 1 USDt0 payment and its POST input schema", async (t) => {
   const child = spawn(process.execPath, ["server.mjs"], {
     cwd: new URL(".", import.meta.url),
     env: {
@@ -44,6 +44,10 @@ test("paid publish advertises the exact 1 USDt0 X Layer payment for discovery an
   const discoveryEncoded = discoveryResponse.headers.get("payment-required");
   assert.ok(discoveryEncoded, "GET discovery includes the PAYMENT-REQUIRED header");
   const discoveryChallenge = JSON.parse(Buffer.from(discoveryEncoded, "base64").toString("utf8"));
+  const discoveryBody = await discoveryResponse.json();
+  assert.equal(discoveryBody.x402Version, discoveryChallenge.x402Version);
+  assert.deepEqual(discoveryBody.resource, discoveryChallenge.resource);
+  assert.deepEqual(discoveryBody.accepts, discoveryChallenge.accepts);
 
   const response = await fetch(`${endpoint}/mcp/publish`, {
     method: "POST",
@@ -51,6 +55,23 @@ test("paid publish advertises the exact 1 USDt0 X Layer payment for discovery an
     body: JSON.stringify({}),
   });
   assert.equal(response.status, 402);
+
+  const unpaidBody = await response.json();
+  assert.equal(unpaidBody.x402Version, 2);
+  assert.deepEqual(unpaidBody.resource, discoveryChallenge.resource);
+  assert.deepEqual(unpaidBody.accepts, discoveryChallenge.accepts);
+  assert.equal(unpaidBody.outputSchema.method, "POST");
+  assert.deepEqual(unpaidBody.outputSchema.input.title, {
+    carrier: "body",
+    required: true,
+    type: "string",
+  });
+  assert.deepEqual(unpaidBody.outputSchema.input.deadline, {
+    carrier: "body",
+    required: true,
+    type: "integer",
+  });
+  assert.equal(unpaidBody.outputSchema.input.price.required, false);
 
   const encoded = response.headers.get("payment-required");
   assert.ok(encoded, "PAYMENT-REQUIRED header is present");

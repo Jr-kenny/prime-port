@@ -1,5 +1,10 @@
 # Marketplace watcher
 
+> Legacy note: this watcher documents the retired shared-settlement-ASP
+> experiment. It is kept for the public publication-task integration and test
+> history, but production must run with `ENABLE_MARKETPLACE_WATCHER=0`. New
+> negotiated wages use `PrimePortEscrow`; see `backend/README.md`.
+
 Prime Port's standing presence on the OKX agent marketplace, built against onchainos 4.2.1 and
 verified on the live backend on 2026-07-11. Lives in `backend/marketplace-watcher/`.
 
@@ -50,40 +55,30 @@ whole machine back into ask-first mode, but the normal state is hands-off. The o
 will never do alone is submit an empty envelope: handing over work still requires the finished
 work to exist.
 
-## The welds (full vending loop, two-task payment model)
+## The settlement loop
 
-Every job involves two marketplace tasks (see the BRIEF's payment model): the **publish task**
-(our flat fee, `PUBLISH_FEE`, default 1) and the **job task** (the freelancer's wage at the
-port-negotiated price). The watcher tells them apart and welds both to the board:
+Publication is the single paid API call. Marketplace task escrow is used only
+after a freelancer has been selected and both sides have signed the hire:
 
-- **Designation → paid intake → publish.** A fresh designation (status 0, never applied to, no
-  commitment hash in it) is the publish task. The watcher applies and invoices immediately so
-  marketplace review/test agents receive a proper response, but it does not create a board job
-  yet. Only after status 1 proves the publication escrow is locked does it validate the task's
-  structured job description, deliverables, acceptance criteria, and deadline. A complete brief
-  is then `POST /jobs`-ed to our backend, which mints the port and opens the listing; an incomplete
-  brief stays private and receives a request for the missing fields. A task amount above
-  `PUBLISH_FEE` is shown as
-  the client's opening offer for the work; an amount equal to the publication fee lists the job
-  as **Open to offers**. The client agent's wallet is resolved from its marketplace profile
-  (`agent get-agents --agent-ids`). Apply always bids `PUBLISH_FEE`, never the optional opening
-  offer: the offer is what the work might cost, while the fee is what publishing costs.
-- **Commitment hash → job task.** A fresh designation carrying a `0x…` commitment hash that
-  matches a board job in `awaiting-escrow` is the wage for a signed hire. The watcher links it
-  (`POST /jobs/:id/job-task`) and applies at exactly the committed price.
-- **Escrow reports.** When either task reaches status 1 (accepted, escrow locked), the watcher
-  reports it to the board (`publish-task/paid` / `job-task/paid`). The board enforces the
-  sequencing off these facts: `port_connect`, `negotiate` and `hire` refuse until the publish
-  escrow locks, and the job only turns `hired` when the job-task escrow locks. If
-  `WATCHER_TOKEN` is set on both processes, these report calls carry it as a header and the
-  board rejects reports without it.
-- **Deliverables, split by kind.** The publish task's deliverable stages as soon as the agent
-  takes the port key (or first operates the port through us): listing live, fan-out done, key
-  delivered, all timestamped. It settles whether or not a hire ever happens. The job task's
-  deliverable stages when the board job reaches `settled`, carrying the commitment hash and
-  transcript hashes as before.
-
-- **Wage release (weld 3).** Once a job settles on our side and its deliverable went to the
+- **One shared settlement identity.** `SETTLEMENT_AGENT_ID` defaults to the
+  existing, unlisted ASP `6592`. The public API agent and the settlement ASP
+  remain separate identities under the same OKX session.
+- **Exact commitment routing.** A private task is accepted only when its
+  commitment hash matches a board job in `awaiting-escrow`, its buyer matches
+  the hiring Agent, and its token and amount exactly match the signed terms.
+  Random probes and malformed tasks are parked, receive prerequisite guidance,
+  and are never applied to or invoiced.
+- **Escrow report.** Status 1 means the private task was accepted and the wage
+  is locked. The watcher reports that fact to the board, which moves the job to
+  `hired` and enables freelancer submissions.
+- **Revision loop.** A freelancer submission is a Prime Port draft, not an OKX
+  delivery. The buyer Agent uses `review_submission` to request changes or
+  accept one exact revision. Only the accepted revision is staged as the
+  official marketplace deliverable.
+- **Marketplace completion.** Status 2 records formal delivery; status 3 keeps
+  the port open for the dispute decision; status 6 archives the port and marks
+  the board job settled.
+- **Wage release.** Once a job settles and its deliverable went to the
   marketplace, the watcher walks the released escrow to the freelancer: claim ASP rewards,
   approve exactly the committed amount, `deposit(commitmentHash, amount)` into the
   JobForwarder, `forward()`. One step per poll cycle, each decision re-derived from the
@@ -94,21 +89,14 @@ port-negotiated price). The watcher tells them apart and welds both to the board
   `wage-release.mjs` with the state machine unit-tested against a stubbed chain
   (`node --test wage-release.test.mjs`).
 
-Tasks that were applied to by hand before the welds existed are never re-published: an
-untracked `done.apply` marks them as already handled. Records from before the two-task split
-have no `kind` and keep the old settled-only deliverable rule.
+In plain terms: the publication endpoint sells the port. After negotiation,
+the buyer privately assigns the signed deal to Prime Port's settlement worker.
+The worker recognizes the deal's fingerprint, bills exactly the agreed wage,
+and ignores everything it cannot prove belongs to a real hire. Drafts and
+revision requests stay in the port; the vault sees only the final version the
+buyer Agent accepted.
 
-In plain terms: the client now pays twice, on purpose. The first coin is a small flat posting
-fee, like paying a job board to run an ad; the machine takes that coin, puts the ad up, and
-hands over the phone line, and at that point the posting fee is earned no matter how the
-hiring goes. The second coin is the worker's wage: after the agent and the freelancer shake
-hands on a price inside the port, the agent drops a second task carrying the deal's
-fingerprint, the machine recognizes it, bills exactly the agreed price, and only when that
-money is locked in the marketplace's vault does the job actually start. The machine also
-refuses to hand over the phone line, or let anyone get hired, before the first coin has
-cleared, so nobody gets our service or a worker's time on credit.
-
-And when the vault finally pays out, the machine finishes the job on its own: it collects
+When the vault finally pays out, the machine finishes the job on its own: it collects
 the money, drops exactly the agreed wage into the one-way chute that was welded to the
 worker's address back when the deal was signed, and pushes it through. It does this in
 small careful steps, checking the public ledger before each one, so even if the machine

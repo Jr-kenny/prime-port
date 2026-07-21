@@ -11,6 +11,7 @@ import type { GroupUpdated } from "@xmtp/content-type-group-updated";
 import type { Attachment, RemoteAttachment } from "@xmtp/content-type-remote-attachment";
 import { toBytes } from "viem";
 import { attachmentCodecs } from "./attachments";
+import type { WalletTransaction } from "./api";
 
 // The client's content types once the evidence codecs are registered.
 export type XmtpClient = Client<string | GroupUpdated | RemoteAttachment | Attachment>;
@@ -34,6 +35,7 @@ export type Session = {
   identity: Identity | null;
   xmtp: XmtpClient | null;
   signMessage: (message: string) => Promise<string>;
+  sendTransaction: (transaction: WalletTransaction) => Promise<string>;
   setPayoutAddress: (address: string) => void;
   signOut: () => Promise<void>;
 };
@@ -48,6 +50,36 @@ async function personalSign(wallet: ConnectedWallet, message: string): Promise<s
   return (await provider.request({
     method: "personal_sign",
     params: [message, wallet.address],
+  })) as string;
+}
+
+async function sendWalletTransaction(wallet: ConnectedWallet, transaction: WalletTransaction): Promise<string> {
+  const provider = await wallet.getEthereumProvider();
+  const chainId = `0x${transaction.chainId.toString(16)}`;
+  try {
+    await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] });
+  } catch (error) {
+    const code = (error as { code?: number }).code;
+    if (code !== 4902 || transaction.chainId !== 196) throw error;
+    await provider.request({
+      method: "wallet_addEthereumChain",
+      params: [{
+        chainId,
+        chainName: "X Layer",
+        nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
+        rpcUrls: ["https://rpc.xlayer.tech"],
+        blockExplorerUrls: ["https://www.oklink.com/xlayer"],
+      }],
+    });
+  }
+  return (await provider.request({
+    method: "eth_sendTransaction",
+    params: [{
+      from: wallet.address,
+      to: transaction.to,
+      data: transaction.data,
+      value: `0x${BigInt(transaction.value || "0").toString(16)}`,
+    }],
   })) as string;
 }
 
@@ -141,6 +173,10 @@ export function useIdentity(): Session {
     signMessage: (message) => {
       if (!embedded) throw new Error("no embedded wallet, sign in first");
       return personalSign(embedded, message);
+    },
+    sendTransaction: (transaction) => {
+      if (!embedded) throw new Error("no embedded wallet, sign in first");
+      return sendWalletTransaction(embedded, transaction);
     },
     setPayoutAddress: (address) => {
       if (!walletAddr) return;

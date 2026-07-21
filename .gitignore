@@ -10,3 +10,4 @@ target/
 __pycache__/
 *.key
 *.pem
+.vercel

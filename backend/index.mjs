@@ -22,6 +22,7 @@ const isEnabled = (value) => ["1", "true", "yes", "on"].includes(String(value ??
 const runtimeStatus = {
   marketplaceWatcher: "disabled",
   a2aResponder: "disabled",
+  genlayerRelayer: "disabled",
 };
 let hermesInferenceVerified = false;
 
@@ -45,26 +46,45 @@ const memoryStatus = () => {
 };
 const serviceReady = () =>
   (!isEnabled(process.env.ENABLE_MARKETPLACE_WATCHER) || runtimeStatus.marketplaceWatcher === "running")
-  && (!isEnabled(process.env.ENABLE_A2A_RESPONDER) || runtimeStatus.a2aResponder === "running");
+  && (!isEnabled(process.env.ENABLE_A2A_RESPONDER) || runtimeStatus.a2aResponder === "running")
+  && (!isEnabled(process.env.ENABLE_GENLAYER_RELAYER) || runtimeStatus.genlayerRelayer === "running");
 
 const ONCHAINOS_SESSION_FILES = ["keyring.enc", "machine-identity", "session.json", "wallets.json"];
 const onchainosHome = `${process.env.HOME ?? "/app"}/.onchainos`;
 
-// Render secret files are text-only, so the encrypted OnchainOS email-login
-// bundle is uploaded as base64. Restore it only when state-sync did not
-// already restore a newer refreshed session.
+// Managed hosts expose secrets either as files (Render) or environment
+// variables (App Runner). Restore the encrypted email-login bundle only when
+// state-sync did not already restore a newer refreshed session.
 function restoreOnchainosSessionSecrets() {
   if (ONCHAINOS_SESSION_FILES.every((name) => existsSync(`${onchainosHome}/${name}`))) return true;
+
+  const environmentSources = [
+    process.env.ONCHAINOS_KEYRING_B64,
+    process.env.ONCHAINOS_MACHINE_IDENTITY_B64,
+    process.env.ONCHAINOS_SESSION_B64,
+    process.env.ONCHAINOS_WALLETS_B64,
+  ];
   const secretDir = process.env.RENDER_SECRET_DIR ?? "/etc/secrets";
-  const sources = ONCHAINOS_SESSION_FILES.map((name) => `${secretDir}/onchainos-${name}.b64`);
-  if (!sources.some(existsSync)) return false;
-  if (!sources.every(existsSync)) throw new Error("incomplete encrypted OnchainOS session secret bundle");
+  const fileSources = ONCHAINOS_SESSION_FILES.map((name) => `${secretDir}/onchainos-${name}.b64`);
+  const hasEnvironmentBundle = environmentSources.some(Boolean);
+  const hasFileBundle = fileSources.some(existsSync);
+  if (!hasEnvironmentBundle && !hasFileBundle) return false;
+  if (hasEnvironmentBundle && !environmentSources.every(Boolean)) {
+    throw new Error("incomplete encrypted OnchainOS environment session bundle");
+  }
+  if (!hasEnvironmentBundle && !fileSources.every(existsSync)) {
+    throw new Error("incomplete encrypted OnchainOS file session bundle");
+  }
+
+  const encodedSources = hasEnvironmentBundle
+    ? environmentSources
+    : fileSources.map((source) => readFileSync(source, "utf8").trim());
   mkdirSync(onchainosHome, { recursive: true });
   ONCHAINOS_SESSION_FILES.forEach((name, index) => {
-    const encoded = readFileSync(sources[index], "utf8").trim();
+    const encoded = encodedSources[index].trim();
     writeFileSync(`${onchainosHome}/${name}`, Buffer.from(encoded, "base64"), { mode: 0o600 });
   });
-  console.log("[prime-port] restored encrypted OnchainOS email session from Render secrets");
+  console.log("[prime-port] restored encrypted OnchainOS email session from managed secrets");
   return true;
 }
 
@@ -78,14 +98,13 @@ await restoreState();
 await import("./port-service/service.mjs");
 await import("./mcp-server/server.mjs");
 await import("./distribution/poster.mjs");
-await import("./payout/register-at-hire.mjs");
 startBackupLoop();
 
 // Path prefix -> internal port. Everything the web app and agents touch:
 // /mcp + /jobs + /freelancers live on mcp-server, /ports + /attachments on
 // port-service. Unknown paths 404 here rather than leak internals.
 const upstream = (path) => {
-  if (path === "/mcp" || path === "/mcp/publish" || path.startsWith("/jobs") || path.startsWith("/freelancers")) return 8792;
+  if (path === "/mcp" || path === "/mcp/publish" || path.startsWith("/jobs") || path.startsWith("/freelancers") || path.startsWith("/evidence")) return 8792;
   if (path.startsWith("/ports") || path.startsWith("/attachments")) return 8791;
   return null;
 };
@@ -137,8 +156,8 @@ function ensureOkxLogin() {
   return okxLoginPromise;
 }
 
-async function assertExpectedAgentVisible(env) {
-  const expected = String(process.env.EXPECTED_OKX_AGENT_ID ?? "5982").replace(/^#/, "");
+async function assertAgentVisible(agentId, env) {
+  const expected = String(agentId).replace(/^#/, "");
   const { stdout } = await promisify(execFile)("onchainos", ["agent", "get", "--page", "1", "--page-size", "50"], {
     env,
     timeout: 120_000,
@@ -168,6 +187,7 @@ async function startWatcher() {
   try {
     runtimeStatus.marketplaceWatcher = "starting";
     await ensureOkxLogin();
+    await assertAgentVisible(process.env.SETTLEMENT_AGENT_ID ?? "6592", process.env);
   } catch (e) {
     runtimeStatus.marketplaceWatcher = "retrying-login";
     console.error(`[prime-port] onchainos login failed, retrying in 60s: ${(e.stderr || e.message).trim().split("\n")[0]}`);
@@ -188,9 +208,34 @@ async function startWatcher() {
   });
 }
 
-// A2A/XMTP listener + Hermes responder. Hermes talks to NVIDIA NIM through
-// its first-class OpenAI-compatible provider, so the cloud worker needs no
-// desktop session and no OpenAI account. Secrets stay in environment vars.
+function startGenLayerRelayer() {
+  if (!isEnabled(process.env.ENABLE_GENLAYER_RELAYER)) {
+    runtimeStatus.genlayerRelayer = "disabled";
+    console.log("[prime-port] ENABLE_GENLAYER_RELAYER is off, dispute relayer disabled");
+    return;
+  }
+  const required = ["GENLAYER_JUDGE_ADDRESS", "GENLAYER_RPC_URL", "GENLAYER_RELAYER_KEY", "ESCROW_ADDRESS", "RELAYER_TOKEN"];
+  const missing = required.filter((name) => !process.env[name]);
+  if (missing.length) {
+    runtimeStatus.genlayerRelayer = `blocked:missing-${missing.join(",").toLowerCase()}`;
+    console.error(`[prime-port] GenLayer relayer missing ${missing.join(", ")}`);
+    return;
+  }
+  const child = spawn(
+    process.execPath,
+    [new URL("./genlayer-relayer/relayer.mjs", import.meta.url).pathname],
+    { stdio: "inherit", env: { ...process.env, BACKEND_URL: `http://127.0.0.1:${APP_PORT}` } },
+  );
+  runtimeStatus.genlayerRelayer = "running";
+  child.on("exit", (code) => {
+    runtimeStatus.genlayerRelayer = "restarting";
+    console.error(`[prime-port] GenLayer relayer exited (code ${code}), restarting in 30s`);
+    setTimeout(startGenLayerRelayer, 30_000);
+  });
+}
+
+// A2A/XMTP listener + Hermes responder. Provider credentials stay in managed
+// environment secrets, and the provider/model can be changed independently.
 function scheduleA2ARecycle(env, recycleMs) {
   const recycleTimer = setTimeout(async () => {
     runtimeStatus.a2aResponder = "recycling";
@@ -224,19 +269,31 @@ async function startA2AResponder() {
     console.log("[prime-port] OKX credentials not set, cloud A2A responder off");
     return;
   }
-  if (!process.env.NVIDIA_API_KEY) {
-    runtimeStatus.a2aResponder = "blocked:missing-nvidia-key";
-    console.log("[prime-port] NVIDIA_API_KEY not set, cloud A2A responder off");
-    return;
-  }
-
   const taskHome = process.env.OKX_AGENT_TASK_HOME ?? "/app/okx-agent-task";
   const aiWorkspace = process.env.OKX_A2A_AI_CWD ?? "/app/a2a-workspace";
   const hermesHome = process.env.HERMES_HOME ?? "/app/hermes";
-  const hermesModel = process.env.HERMES_NVIDIA_MODEL ?? "nvidia/nemotron-3-super-120b-a12b";
+  const hermesProvider = process.env.HERMES_PROVIDER ?? "gemini";
+  const hermesModel = process.env.HERMES_MODEL
+    ?? process.env.HERMES_NVIDIA_MODEL
+    ?? "gemini-3.1-flash-lite";
+  const providerKeyPresent = {
+    gemini: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY),
+    nvidia: Boolean(process.env.NVIDIA_API_KEY),
+    openrouter: Boolean(process.env.OPENROUTER_API_KEY),
+  }[hermesProvider];
+  if (providerKeyPresent !== true) {
+    runtimeStatus.a2aResponder = `blocked:missing-${hermesProvider}-key`;
+    console.log(`[prime-port] API key for Hermes provider ${hermesProvider} not set, cloud A2A responder off`);
+    return;
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(hermesProvider)) {
+    runtimeStatus.a2aResponder = "blocked:invalid-hermes-provider";
+    console.error("[prime-port] HERMES_PROVIDER contains unsupported characters");
+    return;
+  }
   if (!/^[a-zA-Z0-9._/-]+$/.test(hermesModel)) {
     runtimeStatus.a2aResponder = "blocked:invalid-hermes-model";
-    console.error("[prime-port] HERMES_NVIDIA_MODEL contains unsupported characters");
+    console.error("[prime-port] HERMES_MODEL contains unsupported characters");
     return;
   }
   mkdirSync(taskHome, { recursive: true });
@@ -244,7 +301,7 @@ async function startA2AResponder() {
   mkdirSync(hermesHome, { recursive: true });
   writeFileSync(
     `${hermesHome}/config.yaml`,
-    `model:\n  provider: nvidia\n  default: ${hermesModel}\nplugins:\n  enabled:\n    - okx-a2a\n`,
+    `model:\n  provider: ${hermesProvider}\n  default: ${hermesModel}\nplugins:\n  enabled:\n    - okx-a2a\n`,
     { mode: 0o600 },
   );
   const env = {
@@ -259,8 +316,8 @@ async function startA2AResponder() {
   try {
     runtimeStatus.a2aResponder = "starting";
     await ensureOkxLogin();
-    const agentId = await assertExpectedAgentVisible(env);
-    await promisify(execFile)("onchainos", ["preflight", "--skill-version", "4.2.4"], { env, timeout: 180_000 });
+    const agentId = await assertAgentVisible(process.env.EXPECTED_OKX_AGENT_ID ?? "5982", env);
+    await promisify(execFile)("onchainos", ["preflight", "--skill-version", "4.3.0"], { env, timeout: 180_000 });
     await promisify(execFile)("hermes", ["version"], { env, timeout: 30_000 });
     await promisify(execFile)(
       "okx-a2a",
@@ -291,18 +348,18 @@ async function startA2AResponder() {
           "--oneshot",
           "Reply with exactly PRIME_PORT_HERMES_OK and nothing else.",
           "--model", hermesModel,
-          "--provider", "nvidia",
+          "--provider", hermesProvider,
           "--ignore-rules",
         ],
         { env, timeout: 180_000 },
       );
       if (!stdout.includes("PRIME_PORT_HERMES_OK")) {
-        throw new Error("Hermes/NVIDIA inference smoke test returned an unexpected response");
+        throw new Error(`Hermes/${hermesProvider} inference smoke test returned an unexpected response`);
       }
       hermesInferenceVerified = true;
-      console.log("[prime-port] Hermes/NVIDIA inference smoke test passed");
+      console.log(`[prime-port] Hermes/${hermesProvider} inference smoke test passed`);
     }
-    console.log(`[prime-port] cloud Hermes/NVIDIA A2A responder configured for #${agentId} (${hermesModel})`);
+    console.log(`[prime-port] cloud Hermes/${hermesProvider} A2A responder configured for #${agentId} (${hermesModel})`);
   } catch (error) {
     runtimeStatus.a2aResponder = "retrying-setup";
     console.error(`[prime-port] cloud A2A setup failed, retrying in 60s: ${error.message.split("\n")[0]}`);
@@ -318,3 +375,4 @@ async function startA2AResponder() {
 
 startWatcher();
 startA2AResponder();
+startGenLayerRelayer();

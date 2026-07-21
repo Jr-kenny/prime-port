@@ -38,6 +38,13 @@ const DIRS = [
 const enabled = () => Boolean(REMOTE);
 // Never log REMOTE itself: it carries the credential.
 const remoteHost = () => { try { return new URL(REMOTE).host + new URL(REMOTE).pathname; } catch { return "(unparseable remote)"; } };
+const safeGitError = (error) => String(error?.stderr || error?.message || error)
+  .replaceAll(REMOTE, remoteHost())
+  .replace(/https:\/\/[^\s@]+@/g, "https://[redacted]@")
+  .trim()
+  .split("\n")
+  .slice(-2)
+  .join(" | ");
 const git = (args, cwd = MIRROR) => run("git", args, { cwd });
 
 // On boot: clone the mirror and lay its contents under the live data dirs.
@@ -83,14 +90,40 @@ async function backupOnce() {
   }
   await git(["add", "-A"]);
   const { stdout } = await git(["status", "--porcelain"]);
-  if (!stdout.trim()) return false;
-  await git([
-    "-c", "user.name=prime-port-state-sync",
-    "-c", "user.email=state-sync@prime-port.invalid",
-    "commit", "-m", `state @ ${new Date().toISOString()}`,
-  ]);
-  await git(["push", "-u", "origin", "HEAD:main"]);
-  return true;
+  if (stdout.trim()) {
+    await git([
+      "-c", "user.name=prime-port-state-sync",
+      "-c", "user.email=state-sync@prime-port.invalid",
+      "commit", "-m", `state @ ${new Date().toISOString()}`,
+    ]);
+  }
+  // App Runner briefly overlaps old and new instances during a deployment.
+  // Either instance may advance the mirror first, so a plain push can become
+  // non-fast-forward and then fail forever on every later tick. Fetch and
+  // merge the competing snapshot as an ancestor while deliberately keeping
+  // this instance's complete live snapshot. Retry in case both instances
+  // race again between the fetch and push.
+  let lastPushError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await git(["fetch", "origin", "main"]);
+      await git([
+        "-c", "user.name=prime-port-state-sync",
+        "-c", "user.email=state-sync@prime-port.invalid",
+        "merge", "-s", "ours", "--no-edit", "origin/main",
+      ]);
+      const { stdout: aheadStdout } = await git(["rev-list", "--count", "origin/main..HEAD"]);
+      if (Number(aheadStdout.trim()) === 0) return false;
+      await git(["push", "-u", "origin", "HEAD:main"]);
+      return true;
+    } catch (error) {
+      lastPushError = error;
+      if (attempt < 3) {
+        console.log(`[state-sync] snapshot push failed, retrying (${attempt}/3): ${safeGitError(error)}`);
+      }
+    }
+  }
+  throw lastPushError;
 }
 
 export function startBackupLoop() {
@@ -99,7 +132,7 @@ export function startBackupLoop() {
     try {
       if (await backupOnce()) console.log("[state-sync] pushed state snapshot");
     } catch (e) {
-      console.error(`[state-sync] backup failed: ${e.message.split("\n")[0]}`);
+      console.error(`[state-sync] backup failed: ${safeGitError(e)}`);
     }
   };
   setInterval(tick, EVERY_MS);

@@ -25,11 +25,11 @@ Two seats, one screen recording each (or side by side):
   conversation speed. The agent's voice in chat: short, businesslike, a real client.
   It pushes back on price at least twice before settling.
 
-The port side on camera is entirely real: real MCP tools, real XMTP channel, real
-signatures over the real commitment object. The marketplace money legs are simulated by
-the driver (`publish` marks the fee paid, `escrow` locks the wage) because the camera is
-pointed at the port, not the marketplace. The full on-chain loop is a separate run that
-closes issue #24, gets linked from the submission page as the receipts.
+The port side on camera is entirely real: real MCP tools, real XMTP channel, and
+real signatures over the escrow authorization. A rehearsal may inject decoded
+events, but the submission take should show the real wallet approval/funding
+and X Layer lock receipt using the smallest practical USD₮0 amount. Never label
+a simulated event as an on-chain payment.
 
 ## The beats and the driver commands
 
@@ -48,17 +48,17 @@ node demo-agent.mjs say <jobId> <inbox> "8 is the budget. What makes you worth m
 node demo-agent.mjs hire <jobId> <inbox> 10        # commitment + agent signature in one
 # Kenny countersigns in the web app (one click)
 
-node demo-agent.mjs escrow <jobId>                 # wage escrow locks -> status hired
+# buyer signs and broadcasts the exact approval + funding requests
+# the X Layer watcher posts the centered escrow-locked notice
 # Kenny delivers the photo through the chat
 
 node demo-agent.mjs offers <jobId>                 # agent reviews the evidence
 node demo-agent.mjs approve <jobId> "Got the shot, exactly the frame I wanted. Approving now, payout's on its way."
-# the closing word rides on approve: once the deal is struck the port stops
-# relaying loose chat, so the agent's last message is carried by approve itself,
-# dropped into the channel a beat before the port closes. Then: settle + scrapped.
+# buyer broadcasts release; the X Layer event posts the released notice and
+# the port archives.
 ```
 
-`BACKEND=<render url>` points the driver at production. The driver keeps one persistent
+`BACKEND=<production URL>` points the driver at production. The driver keeps one persistent
 demo wallet in `data/demo-agent-key` so the hire signature verifies across commands.
 
 ## Pre-flight
@@ -75,8 +75,8 @@ demo wallet in `data/demo-agent-key` so the hire signature verifies across comma
 - Compress waiting (XMTP latency, page loads) with speed-ups and cuts; stage nothing.
 - If a beat must go to fit 90 seconds, cut from the middle of the negotiation, never
   the opening claim ("can I have this job?") or the countersign moment.
-- The submission page carries the rest: the two-task payment model, the forwarding
-  contract with the on-chain receipts, the timeout story, the uncut recording.
+- The submission page carries the rest: the one-service/internal-escrow model,
+  contract receipts, GenLayer dispute fallback, and the uncut recording.
 
 In plain English: the video is just a customer and a worker striking a deal in a chat
 window, except the customer is a robot and every promise they make to each other turns

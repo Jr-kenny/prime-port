@@ -20,11 +20,10 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { promisify } from "node:util";
 import { createWageRelease } from "./wage-release.mjs";
 import { isX402Task, taskBelongsToAgent } from "./task-routing.mjs";
-import { openingOfferFromTaskAmount } from "../listing-price.mjs";
-import { parseMarketplaceBrief, REQUIRED_BRIEF_TEMPLATE } from "../brief-policy.mjs";
+import { buildSettlementDeliverable, matchSettlementTask } from "../settlement-routing.mjs";
 
 const run = promisify(execFile);
-const AGENT_ID = process.env.AGENT_ID ?? process.env.EXPECTED_OKX_AGENT_ID ?? "5982";
+const AGENT_ID = process.env.SETTLEMENT_AGENT_ID ?? process.env.AGENT_ID ?? "6592";
 const ROLE = process.env.ROLE ?? "asp";
 const POLL_MS = Number(process.env.POLL_MS ?? 30_000);
 const HEARTBEAT_EVERY = Number(process.env.HEARTBEAT_EVERY ?? 10); // cycles
@@ -44,11 +43,6 @@ const AUTO_ENGAGE = (process.env.AUTO_ENGAGE ?? "true") !== "false";
 // a designation becomes a job on our board, a settled job becomes the
 // marketplace deliverable.
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:7860";
-// The flat publish fee (BRIEF: two tasks, one rail). A publish designation's
-// task amount can optionally be the client's opening offer for the WORK when
-// it exceeds this fee. At the fee itself, the job is open to freelancer offers.
-// Apply always bids this publication fee, never the optional opening offer.
-const PUBLISH_FEE = process.env.PUBLISH_FEE ?? "1";
 const WATCHER_TOKEN = process.env.WATCHER_TOKEN ?? "";
 
 const backendPost = async (path, body) => {
@@ -113,6 +107,7 @@ const verbCommand = {
 // Order: apply -> invoice while created; deliver once accepted, and only
 // once there is an actual deliverable to submit.
 function nextVerbs(task, rec) {
+  if (rec.kind !== "job") return [];
   const done = rec.done ?? {};
   if (task.statusCode === 0) {
     if (!done.apply) return [{ verb: "apply", reason: "designated, apply next" }];
@@ -141,56 +136,26 @@ async function executeVerb(task, rec, verb, reason) {
   }
 }
 
-// Weld 1: the coin drops. A fresh designation is immediately published as a
-// job on our own board (which mints its port); the task description is the
-// spec, the posted budget is the client's opening price for the work. The
-// designation itself is the PUBLISH task: we apply at the flat fee, and its
-// escrow lock is what unlocks the port for the client agent.
-async function vendPublish(task, rec, brief) {
-  try {
-    const { data } = await cli(["agent", "get-agents", "--agent-ids", task.counterpartyAgentId]);
-    const wallet = data?.[0]?.agentWalletAddress;
-    if (!wallet) throw new Error(`no wallet on marketplace agent ${task.counterpartyAgentId}`);
-    const j = await backendPost("/jobs", {
-      title: brief.title,
-      description: brief.description,
-      deliverables: brief.deliverables,
-      criteria: `${brief.description}\n\nDeliverables: ${brief.deliverables}\nAcceptance criteria: ${brief.acceptanceCriteria}`,
-      price: brief.openingOffer ?? openingOfferFromTaskAmount(task.tokenAmount, PUBLISH_FEE) ?? undefined,
-      currency: task.tokenSymbol,
-      deadline: brief.deadline,
-      agentId: task.counterpartyAgentId,
-      agentWallet: wallet,
-      marketplaceJobId: task.jobId,
-    });
-    rec.portJobId = j.jobId;
-    rec.kind = "publish";
-    rec.amount ??= PUBLISH_FEE;
-    emit("mkt-vend-published", { jobId: task.jobId, portJobId: j.jobId, publishFee: rec.amount });
-    console.log(`[watcher] vended ${task.jobId.slice(0, 10)}… onto the board as ${j.jobId} (publish fee ${rec.amount})`);
-  } catch (e) {
-    // No local state written: next poll retries until the board answers.
-    emit("mkt-vend-publish-failed", { jobId: task.jobId, error: e.message });
-    console.error(`[watcher] vend-publish for ${task.jobId.slice(0, 10)}… failed: ${e.message}`);
-  }
-}
-
-async function requestMissingBrief(task, rec, missing) {
-  if (rec.briefRequestedAt) return;
+async function rejectUnmatchedTask(task, rec, reason) {
+  rec.kind = "unmatched";
+  rec.unmatchedReason = reason;
+  parked[task.jobId] = true;
+  for (const verb of ["apply", "invoice", "deliver"]) delete pending[`${task.jobId}:${verb}`];
+  if (rec.guidanceSentAt) return;
   const message =
-    `Your publication escrow is confirmed, but Prime Port cannot publish an incomplete freelancer job. ` +
-    `Missing: ${missing.join(", ")}. Reply with this template:\n${REQUIRED_BRIEF_TEMPLATE}`;
+    `Prime Port could not match this private escrow task to a signed hire: ${reason}. ` +
+    `First complete negotiation in the paid Prime Port, obtain both signatures, and create the private task for exactly the signed price with the 0x commitment hash in its title or description. This task will not be accepted.`;
   try {
     await run("okx-a2a", [
       "xmtp-send", "--job-id", task.jobId, "--to-agent-id", task.counterpartyAgentId,
       "--session-agent-id", AGENT_ID, "--message", message, "--json",
     ], { timeout: 60_000 });
-    rec.briefRequestedAt = Date.now();
-    emit("mkt-brief-requested", { jobId: task.jobId, missing });
-    console.log(`[watcher] requested missing brief fields for ${task.jobId.slice(0, 10)}…`);
+    rec.guidanceSentAt = Date.now();
+    emit("mkt-unmatched-task-guidance", { jobId: task.jobId, reason });
+    console.log(`[watcher] parked unmatched task ${task.jobId.slice(0, 10)}…: ${reason}`);
   } catch (e) {
-    emit("mkt-brief-request-failed", { jobId: task.jobId, error: e.message });
-    console.error(`[watcher] brief request for ${task.jobId.slice(0, 10)}… failed: ${e.message}`);
+    emit("mkt-unmatched-task-guidance-failed", { jobId: task.jobId, reason, error: e.message });
+    console.error(`[watcher] unmatched-task guidance for ${task.jobId.slice(0, 10)}… failed: ${e.message}`);
   }
 }
 
@@ -200,13 +165,18 @@ async function requestMissingBrief(task, rec, missing) {
 // when the designation was recognized as a job task (matched or link-failed:
 // either way it must not be vended as a new listing).
 async function linkJobTask(task, rec, boardJobs) {
-  const haystack = `${task.title ?? ""} ${task.description ?? ""}`;
-  const hash = haystack.match(/0x[0-9a-f]{64}/i)?.[0]?.toLowerCase();
-  if (!hash) return false;
-  const job = boardJobs.find?.((j) => j.status === "awaiting-escrow" && j.pendingHire?.hash === hash);
-  if (!job) return false;
+  const match = matchSettlementTask(task, boardJobs, AGENT_ID);
+  if (!match.ok) return match;
+  const { job, commitmentHash: hash } = match;
   try {
-    const linked = await backendPost(`/jobs/${job.jobId}/job-task`, { marketplaceJobId: task.jobId });
+    const linked = await backendPost(`/jobs/${job.jobId}/job-task`, {
+      marketplaceJobId: task.jobId,
+      providerAgentId: AGENT_ID,
+      buyerAgentId: String(task.counterpartyAgentId),
+      commitmentHash: hash,
+      tokenAmount: String(task.tokenAmount),
+      tokenSymbol: String(task.tokenSymbol),
+    });
     rec.portJobId = job.jobId;
     rec.kind = "job";
     rec.amount = linked.price; // apply bids exactly what both sides signed
@@ -216,7 +186,7 @@ async function linkJobTask(task, rec, boardJobs) {
     emit("mkt-job-task-link-failed", { jobId: task.jobId, portJobId: job.jobId, error: e.message });
     console.error(`[watcher] job-task link for ${task.jobId.slice(0, 10)}… failed: ${e.message}`);
   }
-  return true;
+  return { ok: true, job, commitmentHash: hash };
 }
 
 // Weld 3: the wage walks home. Once a job settles on our side and its
@@ -235,10 +205,9 @@ const releaseWages = createWageRelease({
 // accepted, and acceptance is when escrow locks; the board gates the port
 // (publish) or flips the job to hired (job) off these reports.
 async function reportEscrow(task, rec) {
-  if (!rec.kind || !rec.portJobId || rec.paidReported || task.statusCode < 1) return;
-  const path = rec.kind === "job" ? `/jobs/${rec.portJobId}/job-task/paid` : `/jobs/${rec.portJobId}/publish-task/paid`;
+  if (rec.kind !== "job" || !rec.portJobId || rec.paidReported || task.statusCode < 1) return;
   try {
-    await backendPost(path, { marketplaceJobId: task.jobId });
+    await backendPost(`/jobs/${rec.portJobId}/job-task/paid`, { marketplaceJobId: task.jobId });
     rec.paidReported = true;
     emit("mkt-escrow-reported", { jobId: task.jobId, portJobId: rec.portJobId, kind: rec.kind });
     console.log(`[watcher] reported ${rec.kind}-task escrow for ${rec.portJobId}`);
@@ -248,35 +217,43 @@ async function reportEscrow(task, rec) {
   }
 }
 
-// Weld 2: the cup drops. Each task kind has its own settlement deliverable.
-// A publish task delivers on fan-out + key: it settles the moment the agent
-// takes the port, whether or not a hire ever happens. A job task delivers
-// the completed work: it stages only when the board job settles. Records
-// from before the two-task split have no kind and keep the old settled rule.
+async function reportMarketplaceState(task, rec) {
+  if (rec.kind !== "job" || !rec.portJobId) return;
+  const transitions = {
+    2: ["submittedReported", "submitted"],
+    3: ["rejectedReported", "rejected"],
+    6: ["completedReported", "completed"],
+    9: ["failedReported", "failed"],
+  };
+  const transition = transitions[task.statusCode];
+  if (!transition) return;
+  const [flag, endpoint] = transition;
+  if (rec[flag]) return;
+  try {
+    await backendPost(`/jobs/${rec.portJobId}/job-task/${endpoint}`, { marketplaceJobId: task.jobId });
+    rec[flag] = true;
+    emit(`mkt-${endpoint}-reported`, { jobId: task.jobId, portJobId: rec.portJobId });
+    console.log(`[watcher] reported ${endpoint} for ${rec.portJobId}`);
+  } catch (e) {
+    emit(`mkt-${endpoint}-report-failed`, { jobId: task.jobId, portJobId: rec.portJobId, error: e.message });
+    console.error(`[watcher] ${endpoint} report for ${rec.portJobId} failed: ${e.message}`);
+  }
+}
+
+// The official marketplace deliverable is staged only after the buyer Agent
+// accepts one exact Prime Port submission. Revision requests remain in the
+// port and never advance the OKX task state.
 async function stageDeliverables(boardJobs) {
   const linked = Object.entries(state.tasks).filter(
-    ([, r]) => r.portJobId && r.statusCode === 1 && !r.deliverable,
+    ([, r]) => r.kind === "job" && r.portJobId && r.statusCode === 1 && !r.deliverable,
   );
   for (const [mktJobId, rec] of linked) {
     const job = boardJobs.find?.((j) => j.jobId === rec.portJobId);
     if (!job) continue;
-    if (rec.kind === "publish") {
-      if (!job.publishTask?.keyDeliveredAt) continue;
-      rec.deliverable =
-        `Prime Port publish task delivered for ${job.jobId}: ` +
-        `listing live since ${new Date(job.createdAt).toISOString()}, fan-out executed, ` +
-        `port ${job.port.inboxId} key delivered at ${new Date(job.publishTask.keyDeliveredAt).toISOString()}. ` +
-        `Hiring proceeds under a separate job task at the port-negotiated price.`;
-    } else {
-      if (job.status !== "settled") continue;
-      rec.deliverable =
-        `Prime Port job ${job.jobId} completed. ` +
-        `Hire commitment ${job.pendingHire?.hash}. ` +
-        `Transcript hashes: ${(job.archive?.transcriptHashes ?? []).join(", ")}. ` +
-        `Evidence was delivered encrypted on the job's XMTP channel and is committed in the archive.`;
-    }
-    emit("mkt-deliverable-staged", { jobId: mktJobId, portJobId: job.jobId, kind: rec.kind ?? "job" });
-    console.log(`[watcher] staged ${rec.kind ?? "job"} deliverable for ${mktJobId.slice(0, 10)}… from ${job.jobId}`);
+    rec.deliverable = buildSettlementDeliverable(job);
+    if (!rec.deliverable) continue;
+    emit("mkt-deliverable-staged", { jobId: mktJobId, portJobId: job.jobId, kind: "job", submissionId: job.settlement.finalSubmissionId });
+    console.log(`[watcher] staged accepted submission ${job.settlement.finalSubmissionId} for ${mktJobId.slice(0, 10)}…`);
   }
 }
 
@@ -303,19 +280,17 @@ async function pollOnce() {
     emit("mkt-wage-release-failed", { error: e.message });
     console.error(`[watcher] wage release failed: ${e.message}`);
   }
-  const [{ data }, { data: detailData }] = await Promise.all([
-    cli(["agent", "active-tasks"]),
-    cli(["agent", "task-in-progress", "--agent-ids", AGENT_ID]),
-  ]);
-  const details = new Map((detailData.providerTasks ?? []).map((task) => [task.jobId, task]));
-  for (const summary of (data.tasks ?? []).filter((task) => taskBelongsToAgent(task, AGENT_ID))) {
-    const detail = details.get(summary.jobId) ?? {};
+  // Query the configured settlement identity directly. `active-tasks` scans
+  // every User/ASP/Evaluator identity under the shared wallet; old identities
+  // can make that account-wide call slow enough to miss a settlement task.
+  const { data: detailData } = await cli(["agent", "task-in-progress", "--agent-ids", AGENT_ID]);
+  for (const detail of detailData.providerTasks ?? []) {
     const task = {
-      ...summary,
-      description: detail.description ?? summary.description,
-      counterpartyAgentId: summary.counterpartyAgentId ?? detail.buyerAgentId,
-      paymentMode: detail.paymentMode ?? summary.paymentMode,
+      ...detail,
+      statusCode: detail.statusCode ?? detail.status,
+      counterpartyAgentId: detail.counterpartyAgentId ?? detail.buyerAgentId,
     };
+    if (!taskBelongsToAgent(task, AGENT_ID)) continue;
     const rec = (state.tasks[task.jobId] ??= { firstSeenAt: Date.now(), done: {} });
     if (rec.statusCode === undefined) {
       emit("mkt-task-designated", { jobId: task.jobId, title: task.title, counterparty: task.counterpartyAgentId, budget: `${task.tokenAmount} ${task.tokenSymbol}` });
@@ -337,19 +312,11 @@ async function pollOnce() {
       for (const verb of ["apply", "invoice", "deliver"]) delete pending[`${task.jobId}:${verb}`];
       continue;
     }
-    // A fresh designation is either the wage for a signed hire (it carries
-    // the commitment hash) or a new publication purchase. Publication tasks
-    // are classified now but never placed on the public board before escrow.
+    // The settlement identity accepts only a private task that exactly matches
+    // a dual-signed Prime Port hire. It is never a second public service.
     if (!rec.portJobId && task.statusCode === 0 && !rec.done?.apply && !parked[task.jobId]) {
-      if (!(await linkJobTask(task, rec, boardJobs))) {
-        rec.kind = "publish";
-        rec.amount ??= PUBLISH_FEE;
-      }
-    }
-    if (rec.kind === "publish" && !rec.portJobId && task.statusCode === 1 && !parked[task.jobId]) {
-      const parsed = parseMarketplaceBrief(task);
-      if (parsed.complete) await vendPublish(task, rec, parsed.brief);
-      else await requestMissingBrief(task, rec, parsed.missing);
+      const match = await linkJobTask(task, rec, boardJobs);
+      if (!match.ok) await rejectUnmatchedTask(task, rec, match.reason);
     }
     if (rec.statusCode !== undefined && rec.statusCode !== task.statusCode) {
       emit("mkt-task-status", { jobId: task.jobId, from: rec.statusCode, to: task.statusCode });
@@ -357,6 +324,7 @@ async function pollOnce() {
     }
     Object.assign(rec, { statusCode: task.statusCode, title: task.title, tokenAmount: task.tokenAmount, tokenSymbol: task.tokenSymbol, lastSeenAt: Date.now() });
     await reportEscrow(task, rec);
+    await reportMarketplaceState(task, rec);
 
     for (const { verb, reason } of nextVerbs(task, rec)) {
       const key = `${task.jobId}:${verb}`;
@@ -378,8 +346,9 @@ async function pollOnce() {
 
 async function heartbeat() {
   try {
-    const { data } = await cli(["agent", "gate-check", "--role", ROLE]);
-    if (!data.ready) throw new Error(JSON.stringify(data));
+    const { data } = await cli(["agent", "get-agents", "--agent-ids", AGENT_ID]);
+    if (!data?.some?.((agent) => String(agent.agentId) === String(AGENT_ID)))
+      throw new Error(`settlement agent #${AGENT_ID} is not visible`);
   } catch (e) {
     emit("mkt-heartbeat-failed", { error: e.message });
     console.error(`[watcher] heartbeat FAILED: ${e.message}`);
