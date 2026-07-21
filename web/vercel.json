@@ -12,7 +12,7 @@
     { "source": "/og/:id", "destination": "/api/og?id=:id" },
     {
       "source": "/api/:path*",
-      "destination": "https://prime-port-latest.onrender.com/:path*"
+      "destination": "https://mxm6w9ajeg.us-east-1.awsapprunner.com/:path*"
     },
     {
       "source": "/((?!api/).*)",

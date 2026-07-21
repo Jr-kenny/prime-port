@@ -1,0 +1,63 @@
+{
+  "ServiceName": "prime-port-connect",
+  "SourceConfiguration": {
+    "AutoDeploymentsEnabled": false,
+    "AuthenticationConfiguration": {
+      "AccessRoleArn": "arn:aws:iam::572908218886:role/prime-port-apprunner-ecr"
+    },
+    "ImageRepository": {
+      "ImageIdentifier": "572908218886.dkr.ecr.us-east-1.amazonaws.com/prime-port:20260719-settlement-handoff-v2",
+      "ImageRepositoryType": "ECR",
+      "ImageConfiguration": {
+        "Port": "7860",
+        "RuntimeEnvironmentVariables": {
+          "APP_PORT": "7860",
+          "ENABLE_A2A_RESPONDER": "1",
+          "ENABLE_MARKETPLACE_WATCHER": "0",
+          "ENABLE_GENLAYER_RELAYER": "0",
+          "EXPECTED_OKX_AGENT_ID": "5982",
+          "HERMES_PROVIDER": "gemini",
+          "HERMES_MODEL": "gemini-3.1-flash-lite",
+          "PUBLISH_PRICE": "$0.0001",
+          "PUBLIC_BASE_URL": "https://mxm6w9ajeg.us-east-1.awsapprunner.com",
+          "ATTACH_BASE": "https://mxm6w9ajeg.us-east-1.awsapprunner.com"
+        },
+        "RuntimeEnvironmentSecrets": {
+          "GEMINI_API_KEY": "arn:aws:ssm:us-east-1:572908218886:parameter/prime-port/GEMINI_API_KEY",
+          "USDT_ADDRESS": "arn:aws:ssm:us-east-1:572908218886:parameter/prime-port/USDT_ADDRESS",
+          "X_ACCESS_TOKEN_SECRET": "arn:aws:ssm:us-east-1:572908218886:parameter/prime-port/X_ACCESS_TOKEN_SECRET",
+          "X_ACCESS_TOKEN": "arn:aws:ssm:us-east-1:572908218886:parameter/prime-port/X_ACCESS_TOKEN",
+          "X_API_SECRET": "arn:aws:ssm:us-east-1:572908218886:parameter/prime-port/X_API_SECRET",
+          "X_API_KEY": "arn:aws:ssm:us-east-1:572908218886:parameter/prime-port/X_API_KEY",
+          "OKX_PASSPHRASE": "arn:aws:ssm:us-east-1:572908218886:parameter/prime-port/OKX_PASSPHRASE",
+          "OKX_SECRET_KEY": "arn:aws:ssm:us-east-1:572908218886:parameter/prime-port/OKX_SECRET_KEY",
+          "OKX_API_KEY": "arn:aws:ssm:us-east-1:572908218886:parameter/prime-port/OKX_API_KEY",
+          "XMTP_ENV": "arn:aws:ssm:us-east-1:572908218886:parameter/prime-port/XMTP_ENV",
+          "STATE_REMOTE": "arn:aws:ssm:us-east-1:572908218886:parameter/prime-port/STATE_REMOTE",
+          "ONCHAINOS_KEYRING_B64": "arn:aws:ssm:us-east-1:572908218886:parameter/prime-port/ONCHAINOS_KEYRING_B64",
+          "ONCHAINOS_MACHINE_IDENTITY_B64": "arn:aws:ssm:us-east-1:572908218886:parameter/prime-port/ONCHAINOS_MACHINE_IDENTITY_B64",
+          "ONCHAINOS_SESSION_B64": "arn:aws:ssm:us-east-1:572908218886:parameter/prime-port/ONCHAINOS_SESSION_B64",
+          "ONCHAINOS_WALLETS_B64": "arn:aws:ssm:us-east-1:572908218886:parameter/prime-port/ONCHAINOS_WALLETS_B64"
+        }
+      }
+    }
+  },
+  "InstanceConfiguration": {
+    "Cpu": "1 vCPU",
+    "Memory": "2 GB",
+    "InstanceRoleArn": "arn:aws:iam::572908218886:role/prime-port-apprunner-runtime"
+  },
+  "AutoScalingConfigurationArn": "arn:aws:apprunner:us-east-1:572908218886:autoscalingconfiguration/prime-port-singleton/1/ce674697a0284bba9c1c442dbc7cef30",
+  "HealthCheckConfiguration": {
+    "Protocol": "HTTP",
+    "Path": "/health",
+    "Interval": 10,
+    "Timeout": 5,
+    "HealthyThreshold": 1,
+    "UnhealthyThreshold": 5
+  },
+  "Tags": [
+    { "Key": "Application", "Value": "prime-port" },
+    { "Key": "AgentId", "Value": "5982" }
+  ]
+}

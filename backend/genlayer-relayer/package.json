@@ -1,0 +1,13 @@
+{
+  "name": "@prime-port/genlayer-relayer",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node relayer.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "genlayer-js": "^0.18.4",
+    "viem": "2.48.4"
+  }
+}

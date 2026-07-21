@@ -17,7 +17,9 @@ import { transcriptHash } from "../commitment/commitment.mjs";
 
 const ENV = process.env.XMTP_ENV ?? "dev";
 const PORT = Number(process.env.PORT ?? 8791);
-const DATA = new URL("./data/", import.meta.url).pathname;
+const DATA = process.env.PORT_DATA_DIR
+  ? `${process.env.PORT_DATA_DIR.replace(/\/$/, "")}/`
+  : new URL("./data/", import.meta.url).pathname;
 const MAX_GRANT_SIGNATURES = 3; // one registration can ask for a couple of sigs
 const GRANT_WINDOW_MS = 10 * 60 * 1000;
 // Evidence payloads are encrypted client-side before they get here; we only

@@ -1,120 +1,84 @@
-# The hire commitment object
+# Hire commitment and escrow authorization
 
-The load-bearing interface of Prime Port. When an agent hires a freelancer, both sides sign this
-object; from that moment escrow locks, the forwarding contract knows where the money can go, and
-the transcript stops being a chat and becomes evidence. Every lane touches it: backend produces
-it, contracts registers it, frontend shows it, disputes replay it.
+Prime Port separates the human-readable deal from the authorization that can
+move funds.
 
-Reference implementation + test vector: `backend/commitment/`. Changing anything in this doc
-after it lands means changing the reference impl and the test vector in the same PR, with
-everyone's eyes on it.
+## 1. Hire commitment
 
-## The object
+The backend canonicalizes a versioned object containing:
 
-```jsonc
+- the Prime Port job and port inbox;
+- buyer Agent ID and wallet;
+- freelancer inbox, signing wallet, and payout wallet;
+- acceptance criteria, decimal-string USD₮0 price, and deadline;
+- the selected negotiation transcript hash;
+- the signed dispute disclosure; and
+- `feeBps: 0`, because Prime Port's revenue is the separate publication fee.
+
+`commitmentHash = keccak256(canonical(commitment))`, where canonical JSON uses
+lexicographically sorted keys at every depth, no insignificant whitespace, and
+UTF-8 bytes. Addresses and hashes are lowercase; money remains a decimal string
+rather than a JSON float.
+
+Version 2 includes this dispute policy in the object before either party signs:
+
+```json
 {
-  "version": 1,
-  "jobId": "…",                 // OKX marketplace task id
-  "port": {
-    "inboxId": "…"              // XMTP inbox id of the port minted for this job
-  },
-  "agent": {
-    "agentId": "…",             // OKX agent id of the hiring agent (e.g. "4711")
-    "wallet": "0x…"             // its marketplace wallet, lowercase; this signs
-  },
-  "freelancer": {
-    "inboxId": "…",             // freelancer's own XMTP inbox id
-    "wallet": "0x…",            // wallet that signs (embedded or user-provided), lowercase
-    "payoutAddress": "0x…"      // where money goes; may differ from wallet, lowercase
-  },
-  "terms": {
-    "criteria": "…",            // acceptance criteria, plain text, exactly as negotiated
-    "price": "40",              // decimal string, never a float
-    "currency": "USDT",
-    "deadline": 1752969600      // unix seconds, UTC
-  },
-  "feeBps": 250,                // Prime Port fee in basis points, transparent
-  "transcriptHash": "0x…",      // hash of the negotiation up to this moment (below)
-  "hiredAt": 1752278400         // unix seconds, UTC, set by our backend at hire()
+  "adjudicator": "GenLayer",
+  "disclosure": "If either party opens a dispute, the selected job transcript, submissions, revision feedback, and attachment metadata are disclosed to GenLayer validators for settlement.",
+  "outcome": "provider-award-bps"
 }
 ```
 
-Rules that make it deterministic:
+## 2. Escrow authorization
 
-- All addresses lowercase hex. All hashes 0x-prefixed lowercase hex.
-- Money is a decimal string (`"40"`, `"39.5"`), never a JSON number: floats don't survive
-  round-trips and 6-decimal USDT doesn't need them.
-- Timestamps are unix seconds as integers.
+The contract does not parse JSON. The application builds a second structured
+hash from the commitment and the exact money-moving fields:
 
-## Canonical encoding and the commitment hash
-
-`commitmentHash = keccak256(canonical(object))` where `canonical` is JSON with:
-
-1. object keys sorted lexicographically at every level,
-2. no insignificant whitespace,
-3. UTF-8 bytes.
-
-That's it. No protobuf, no RLP: the object is small, human-auditable, and every runtime in this
-project (node backend, browser, Solidity via off-chain hashing) can reproduce three rules.
-
-## Signatures
-
-Both parties sign the commitment hash with a plain personal message signature (EIP-191
-`personal_sign`) over the string:
-
-```
-Prime Port hire commitment v1: <commitmentHash>
+```text
+PrimePortEscrowAuthorization(
+  bytes32 commitmentHash,
+  address buyer,
+  address provider,
+  address payout,
+  address token,
+  uint256 amount,
+  uint64 deadline,
+  uint256 chainId,
+  address escrow
+)
 ```
 
-- **Agent side**: signed by the agent's marketplace wallet (`agent.wallet`). Not by the port:
-  the port is our infrastructure, and a port-side signature would prove nothing about the agent.
-- **Freelancer side**: signed by `freelancer.wallet`, the MPC embedded wallet or whatever wallet
-  they connected. We structurally cannot produce this signature.
+Both buyer and freelancer `personal_sign`:
 
-`personal_sign` is the one thing every embedded-wallet provider supports today. EIP-712 typed
-data is the natural upgrade (nicer wallet UX, on-chain verifiable structure) and slots in as
-`version: 2` without touching anything else.
-
-The signed bundle `{ commitment, agentSig, freelancerSig }` is what gets committed: the hash is
-registered with the forwarding contract at hire (exact call shape to be agreed with the contracts
-lane) and attached to the marketplace acceptance so escrow locks against it.
-
-## The transcript hash
-
-Covers the winning candidate's channel only, from channel open to the hire moment:
-
-```
-transcriptHash = keccak256(canonical(messages))
+```text
+Prime Port escrow authorization v1: <authorizationHash>
 ```
 
-where `messages` is the time-ordered array, one entry per message:
+The buyer's signature must recover `commitment.agent.wallet`; the freelancer's
+must recover `commitment.freelancer.wallet`. `PrimePortEscrow.fund` verifies the
+same message on-chain before transferring the exact amount from the buyer.
 
-```jsonc
-{ "id": "…", "sender": "<senderInboxId>", "sentAtNs": "…", "contentSha256": "0x…" }
-```
+This domain binding matters: a signature for one Prime Port job cannot be
+reused with another payout address, amount, token, deadline, chain, or escrow
+deployment.
 
-- `id` and `sentAtNs` come from XMTP (`sentAtNs` as a decimal string: nanoseconds overflow JSON
-  numbers).
-- `contentSha256` is the sha256 of the encoded message content bytes, so the hash commits to
-  what was said without embedding the whole conversation in the object.
-- Losing candidates' channels are not part of any hash. They close unseen, as promised.
+## State boundary
 
-Both sides sign over this hash (inside the commitment), so neither can later claim the
-negotiation went differently: the archived transcript either matches the hash or it doesn't.
+Two signatures mean **terms accepted**, not **funds locked**. The backend only
+changes the job to `hired` and shows the centered “Escrow locked — start work”
+notice after the X Layer watcher observes the matching `EscrowFunded` event.
 
-## In plain English
+Pre-upgrade version-1 commitment signatures used by the retired shared-worker
+experiment are not valid escrow authorizations and must never be silently
+migrated. Those jobs are marked `legacy-signatures-incompatible`.
 
-This object is the handshake made solid. It's a small receipt that says who is hiring whom, for
-what, by when, for how much, where the money should land, and what was said on the way here. We
-boil the receipt down to a single fingerprint (the hash), and both sides put their signature on
-that fingerprint: the agent with its marketplace wallet, the freelancer with theirs. From then
-on nobody can quietly change a word of the deal or the conversation behind it, because any
-change produces a different fingerprint and the signatures stop matching. Our fee sits inside
-the receipt in plain sight, and the payout address in the receipt is the only place the
-forwarding contract will ever send money.
+## Evidence
 
-## Deliberately not in v1
+The negotiation transcript is content-addressed. If a dispute is opened, Prime
+Port creates canonical JSON containing the signed commitment, both signatures,
+the selected transcript, submissions, revision feedback, and attachment
+metadata. The evidence file's Keccak hash is stored in `openDispute`; GenLayer
+must fetch bytes whose hash matches that on-chain value before judging them.
 
-- EIP-712 typed signatures (v2, additive).
-- Multi-currency / fiat: `currency` is there, policy says USDT for now.
-- Milestones / partial payouts: one job, one price, one payout.
+Normal jobs never disclose their private port transcript to validators.

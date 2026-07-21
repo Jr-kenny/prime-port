@@ -1,47 +1,52 @@
 # Prime Port backend
 
-One container, everything: the port service (XMTP port lifecycle: mint /
-grant / operate / scrap), the MCP server (a paid job-publication endpoint,
-agent-facing port tools, plus the
-freelancer REST surface), the distribution poster (Telegram fan-out), and
-the OKX marketplace watcher. `index.mjs` starts them all and routes `/mcp`,
-`/mcp/publish`, `/jobs`, `/freelancers` to the MCP server and `/ports`, `/attachments` to
-the port service. `/health` answers 200 with component readiness and
-process/container memory. Its `ok` field is false while an enabled watcher or
-responder is not ready.
+One container runs the XMTP port service, MCP + REST server, distribution
+poster, optional OKX A2A responder, X Layer escrow event watcher, and optional
+GenLayer resolution relayer. `index.mjs` exposes them through one public port.
 
-`POST /mcp/publish` is the single paid operation. An unpaid call returns an
-x402 v2 `402 Payment Required` challenge for 1 USD₮0 on X Layer. A verified
-paid replay publishes the supplied human job and returns its private port.
-Monitoring and negotiating through that existing port do not trigger another
-Prime Port publication charge. The eventual freelancer wage is agreed and
-escrowed separately.
+`POST /mcp/publish` is the only paid OKX-facing operation. Its x402 payment is
+Prime Port's publication fee. The later negotiated freelancer wage is not a
+second marketplace service: the backend internally produces the dual-signature
+authorization and exact `approve` + `fund` transactions for `PrimePortEscrow`.
 
-State (port keys, XMTP identity DBs, jobs ledger, watcher memory, and the
-OKX A2A session store) is
-mirrored to a private git repo because free-tier disks are ephemeral; set
-`STATE_REMOTE`. The watcher needs `OKX_API_KEY` / `OKX_SECRET_KEY` /
-`OKX_PASSPHRASE` (API-key wallet login at boot). Set
-`ENABLE_MARKETPLACE_WATCHER=1` to run it. Set `ENABLE_A2A_RESPONDER=1` plus
-`NVIDIA_API_KEY` to run the always-on XMTP listener and Hermes/NVIDIA
-responder. `HERMES_NVIDIA_MODEL` can override the default Nemotron model.
-Startup runs `okx-a2a doctor --fix` and does not report the responder as
-running until the CLI confirms communication readiness. The managed A2A
-daemon is recycled every four hours to bound its memory; set
-`A2A_RECYCLE_MS=0` to disable that safeguard or provide another interval in
-milliseconds.
-For an agent registered through email login, provide the four encrypted
-`onchainos-*.b64` Render secret files described in `docs/deploy.md`; startup
-refuses to report the responder as running unless `EXPECTED_OKX_AGENT_ID`
-(default `5982`) is visible to that session.
-Both are opt-in so a cloud instance can be verified before the Mac fallback
-is stopped; never leave two watchers/responders active for the same agent.
+The freelancer may submit any number of revisions. An accepted revision becomes
+release-ready, but only an observed X Layer event changes financial state. If a
+party disputes, the backend writes a content-addressed evidence manifest, the
+GenLayer judge returns a finalized provider share, and the dedicated resolver
+relays that result to X Layer.
 
-Built by `.github/workflows/build-backend-image.yml` into
-`ghcr.io/jr-kenny/prime-port:latest`; deployed on Render.
-See `docs/deploy.md` for the full runbook.
+## Important environment variables
 
-Run locally against the real OKX facilitator: set `OKX_API_KEY`,
-`OKX_SECRET_KEY`, and `OKX_PASSPHRASE`, then run `node index.mjs`. For an
-unpaid challenge-only local test, set `X402_OFFLINE_CHALLENGE=1`; payment
-verification and settlement never bypass OKX.
+- `ESCROW_ADDRESS`: deployed `PrimePortEscrow`; unset disables new hires and the
+  event watcher.
+- `ESCROW_START_BLOCK`: deployment block for the first watcher run.
+- `XLAYER_RPC_URL`, `USDT_ADDRESS`, `ESCROW_CONFIRMATIONS`: chain settings.
+- `ENABLE_GENLAYER_RELAYER=1`: run the dispute relayer.
+- `GENLAYER_JUDGE_ADDRESS`, `GENLAYER_RPC_URL`, `GENLAYER_RELAYER_KEY`: judge
+  and dedicated resolver credentials.
+- `RELAYER_TOKEN`: high-entropy secret used for durable relayer submission
+  markers.
+- `ENABLE_A2A_RESPONDER=1`, `EXPECTED_OKX_AGENT_ID=5982`: run the public Agent
+  responder after its email session is restored.
+- `ENABLE_MARKETPLACE_WATCHER=0`: the retired shared settlement worker must stay
+  disabled for this architecture.
+
+The current AWS App Runner deployment restores the encrypted OnchainOS login
+bundle from SSM and mirrors Prime Port's port/XMTP/job state to a private remote
+at startup and on a quota-safe schedule. App Runner's local filesystem remains
+ephemeral; a future move to the included Lightsail systemd service can instead
+mount those directories under `/var/lib/prime-port` for a smaller recovery
+window.
+
+## Verify locally
+
+```shell
+npm test --prefix mcp-server
+npm test --prefix genlayer-relayer
+node --check index.mjs
+```
+
+The isolated settlement E2E covers dual signatures, exact funding calldata,
+the escrow-locked notice, a revision request, direct release, dispute evidence,
+and a split GenLayer resolution. It injects decoded contract events; it does not
+spend real tokens.

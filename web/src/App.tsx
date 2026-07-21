@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useLoginWithEmail, useLoginWithOAuth } from "@privy-io/react-auth";
-import { claimJob, countersignHire, getProfile, listJobs } from "./api";
+import { claimJob, countersignHire, getProfile, listJobs, openDispute, refundBuyer, submitForReview } from "./api";
 import type { FreelancerProfile, PublicJob } from "./api";
 import { ContentTypeRemoteAttachment, decryptAndSave, encryptAndUpload, fmtBytes } from "./attachments";
 import type { RemoteAttachment } from "./attachments";
@@ -490,21 +490,43 @@ function SignIn({ t, s, navigate, jobs, jobId, session, refreshJobs }: Shared & 
 // up here, and what's typed here lands in the agent's get_offers. Evidence
 // rides the same DM as remote attachments (attachments.ts): encrypted file
 // in the port's store, envelope in the message, digest in the archive.
-type PortMessage = { id: string; text: string; mine: boolean; at: number; attachment?: RemoteAttachment };
+type PortMessage = {
+  id: string;
+  text: string;
+  mine: boolean;
+  at: number;
+  attachment?: RemoteAttachment;
+  system?: boolean;
+};
 type XmtpDm = Awaited<ReturnType<NonNullable<Session["xmtp"]>["conversations"]["newDm"]>>;
 
+// Prime Port control frames remain in the private XMTP transcript so both
+// parties can recover the escrow state. They are protocol messages, not
+// human chat, so render a concise status notice instead of their JSON payload.
+const primePortStatus = (content: string): string | null => {
+  if (content.startsWith("[prime-port:hire-countersigned]")) return "Terms accepted · waiting for buyer funding";
+  if (content.startsWith("[prime-port:escrow-funding-ready]")) return "Terms accepted · waiting for buyer to fund escrow";
+  if (content.startsWith("[prime-port:escrow-locked]")) return "Escrow locked · you can start work";
+  if (content.startsWith("[prime-port:escrow-released]")) return "Work approved · escrow released to your payout wallet";
+  if (content.startsWith("[prime-port:escrow-refunded]")) return "Job cancelled · escrow refunded to the buyer";
+  if (content.startsWith("[prime-port:dispute-opened]")) return "Dispute opened · escrow frozen for GenLayer review";
+  if (content.startsWith("[prime-port:dispute-resolved]")) return "GenLayer decision finalized · escrow settled";
+  if (content.startsWith("[prime-port:submission]")) return "Work submitted · ready for agent review";
+  if (content.startsWith("[prime-port:")) return "Prime Port status updated";
+  return null;
+};
+
 const toPortMessages = (msgs: Awaited<ReturnType<XmtpDm["messages"]>>, myInboxId: string): PortMessage[] =>
-  msgs.flatMap((m) => {
+  msgs.flatMap((m): PortMessage[] => {
     const base = { id: m.id, mine: m.senderInboxId === myInboxId, at: Number(m.sentAtNs / 1_000_000n) };
-    if (typeof m.content === "string") return [{ ...base, text: m.content }];
+    if (typeof m.content === "string") {
+      const status = primePortStatus(m.content);
+      return [{ ...base, text: status ?? m.content, system: Boolean(status) }];
+    }
     const a = m.content as RemoteAttachment | undefined;
     if (a?.contentDigest) return [{ ...base, text: `📎 ${a.filename || "attachment"}`, attachment: a }];
     return [];
   });
-
-// The exact string both wallets personal_sign over a hire; must match
-// signingMessage() in backend/commitment/commitment.mjs.
-const hireSigningMessage = (hash: string) => `Prime Port hire commitment v1: ${hash}`;
 
 function ChatScreen(props: Shared & { activeJobId?: string }) {
   const { t, s, dark, toggleDark, navigate, jobs, claims, session, identity, refreshJobs, activeJobId } = props;
@@ -517,6 +539,10 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
   const [signing, setSigning] = useState(false);
   const [signError, setSignError] = useState("");
   const [uploading, setUploading] = useState<{ name: string; pct: number } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [showDispute, setShowDispute] = useState(false);
+  const [disputeReason, setDisputeReason] = useState("");
+  const [settlementAction, setSettlementAction] = useState<"dispute" | "refund" | null>(null);
   const dmRef = useRef<XmtpDm | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -612,9 +638,11 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
     setSigning(true);
     setSignError("");
     try {
-      const signature = await session.signMessage(hireSigningMessage(pendingHire.hash));
+      if (!pendingHire.escrow?.signThisExactly) throw new Error("escrow authorization is unavailable");
+      const signature = await session.signMessage(pendingHire.escrow.signThisExactly);
       await countersignHire(activeJob.jobId, signature);
       await refreshJobs();
+      await pullMessages();
     } catch (err) {
       setSignError((err as Error).message);
     } finally {
@@ -622,11 +650,87 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
     }
   };
 
+  const hiredMe = Boolean(
+    activeJob?.pendingHire && identity && activeJob.pendingHire.commitment.freelancer.inboxId === identity.inboxId,
+  );
+  const latestSubmission = activeJob?.submissions?.at(-1);
+  const canSubmitForReview =
+    activeJob?.status === "hired" &&
+    hiredMe &&
+    activeJob.settlement?.reviewStatus !== "awaiting-review" &&
+    activeJob.settlement?.reviewStatus !== "final-delivery-ready";
+
+  const canSettle = Boolean(
+    activeJob
+    && identity
+    && hiredMe
+    && ["hired", "delivered", "delivery-rejected"].includes(activeJob.status),
+  );
+
+  const submitDispute = async () => {
+    if (!activeJob || !identity || disputeReason.trim().length < 10 || settlementAction) return;
+    setSettlementAction("dispute");
+    setTransportError("");
+    try {
+      const result = await openDispute(activeJob.jobId, identity.inboxId, disputeReason.trim());
+      const transactionHash = await session.sendTransaction(result.transaction);
+      setShowDispute(false);
+      setDisputeReason("");
+      setTransportError(`Dispute transaction submitted: ${shortAddr(transactionHash)}`);
+      await refreshJobs();
+    } catch (error) {
+      setTransportError((error as Error).message);
+    } finally {
+      setSettlementAction(null);
+    }
+  };
+
+  const refund = async () => {
+    if (!activeJob || !identity || settlementAction) return;
+    if (!window.confirm("Refund the full escrow to the buyer? This cannot be undone.")) return;
+    setSettlementAction("refund");
+    setTransportError("");
+    try {
+      const result = await refundBuyer(activeJob.jobId, identity.inboxId);
+      const transactionHash = await session.sendTransaction(result.transaction);
+      setTransportError(`Refund transaction submitted: ${shortAddr(transactionHash)}`);
+      await refreshJobs();
+    } catch (error) {
+      setTransportError((error as Error).message);
+    } finally {
+      setSettlementAction(null);
+    }
+  };
+
+  const sendForReview = async () => {
+    if (!activeJob || !identity || !dmRef.current || !canSubmitForReview || submitting) return;
+    const note = draft.trim();
+    setSubmitting(true);
+    setTransportError("");
+    try {
+      if (note) {
+        await dmRef.current.send(`Submission note: ${note}`);
+        setDraft("");
+        await pullMessages();
+      }
+      const result = await submitForReview(activeJob.jobId, identity.inboxId, note);
+      await dmRef.current.send(
+        `[prime-port:submission] ${result.submission.submissionId} · revision ${result.submission.revision} · ready for review`,
+      );
+      await pullMessages();
+      await refreshJobs();
+    } catch (err) {
+      setTransportError((err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // Past the claim stage the negotiated commitment price is the truth, not the listing price.
   const dealPrice = (job: PublicJob) =>
     job.pendingHire ? `${job.pendingHire.commitment.terms.price} ${job.pendingHire.commitment.terms.currency}` : fmtBudget(job);
   const statusLabel = (job?: PublicJob) =>
-    !job ? "" : job.status === "open" ? "Negotiating" : job.status === "hired" || job.status === "approved" ? `Escrow locked · ${dealPrice(job)}` : job.status === "awaiting-escrow" ? `Deal signed · locking escrow · ${dealPrice(job)}` : job.status === "settled" ? `Paid · ${dealPrice(job)} released` : "Awaiting signatures";
+    !job ? "" : job.status === "open" ? "Negotiating" : job.status === "hired" ? `Escrow locked · ${dealPrice(job)}` : job.status === "delivered" ? `Final delivery accepted · release pending · ${dealPrice(job)}` : job.status === "delivery-rejected" ? "Final delivery rejected · dispute available" : job.status === "disputed" ? "Escrow frozen · GenLayer reviewing" : job.status === "awaiting-escrow" ? `Deal signed · awaiting buyer funding · ${dealPrice(job)}` : job.status === "settled" ? `Escrow settled · ${dealPrice(job)}` : job.status === "failed" ? "Escrow refunded · job closed" : "Awaiting signatures";
 
   return (
     <div style={s.dchatPage}>
@@ -670,7 +774,7 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
                       <span style={s.dchatThreadName}>{job?.title ?? claim.jobId}</span>
                       <span style={s.dchatThreadTime}>{last ? fmtTime(last.at) : ""}</span>
                     </div>
-                    <span style={s.dchatThreadPreview}>{last ? `${last.mine ? "You: " : ""}${last.text.slice(0, 38)}` : statusLabel(job) || "Applied"}</span>
+                    <span style={s.dchatThreadPreview}>{last ? `${last.system ? "" : last.mine ? "You: " : ""}${last.text.slice(0, 38)}` : statusLabel(job) || "Applied"}</span>
                   </div>
                 </div>
               );
@@ -708,7 +812,7 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
                   <div style={{ alignSelf: "center", maxWidth: 420, display: "flex", flexDirection: "column", gap: 10, background: t.accentSoft, border: `1px solid ${t.accent}`, borderRadius: 14, padding: "14px 18px", textAlign: "center" }}>
                     <span style={{ font: `700 14px ${BODY}`, color: t.ink }}>The agent signed a hire commitment · {pendingHire.commitment.terms.price} {pendingHire.commitment.terms.currency}</span>
                     <span style={{ font: `400 13px/1.5 ${BODY}`, color: t.muted }}>
-                      Countersign to accept. The agent then funds escrow on the marketplace; wait for "Escrow locked" here before starting work. Payment goes to {shortAddr(identity?.payoutAddress ?? "")}.
+                      Countersign to accept the X Layer escrow and GenLayer dispute policy. The buyer then funds the contract; wait for "Escrow locked" here before starting work. Payment goes to {shortAddr(identity?.payoutAddress ?? "")}.
                     </span>
                     <button
                       style={{ background: t.accent, color: "#fff", border: "none", borderRadius: 10, padding: "10px 16px", font: `700 14px ${BODY}`, cursor: signing ? "wait" : "pointer" }}
@@ -720,33 +824,109 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
                     {signError && <span style={{ font: `400 12px ${BODY}`, color: "#c73a3a" }}>{signError}</span>}
                   </div>
                 )}
-                {messages.map((m) => (
-                  <div key={m.id} style={{ display: "flex", justifyContent: m.mine ? "flex-end" : "flex-start" }}>
-                    <div
-                      style={
-                        m.mine
-                          ? { maxWidth: "60%", padding: "12px 16px", borderRadius: 14, font: `400 14px/1.5 ${BODY}`, background: t.accent, color: "#fff" }
-                          : { maxWidth: "60%", padding: "12px 16px", borderRadius: 14, font: `400 14px/1.5 ${BODY}`, background: t.cardBg, border: `1px solid ${t.border}`, color: t.ink }
-                      }
-                    >
-                      {m.attachment ? (
-                        <button
-                          onClick={() => download(m.attachment!)}
-                          title="Decrypt and download"
-                          style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: 0, font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }}
-                        >
-                          <span aria-hidden>📎</span>
-                          <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                            <span style={{ fontWeight: 700, textDecoration: "underline" }}>{m.attachment.filename || "attachment"}</span>
-                            <span style={{ opacity: 0.75, fontSize: 12 }}>Evidence · {fmtBytes(m.attachment.contentLength ?? 0)} · encrypted</span>
-                          </span>
-                        </button>
-                      ) : (
-                        m.text
-                      )}
-                    </div>
+                {hiredMe && latestSubmission && (
+                  <div style={{ alignSelf: "center", maxWidth: 460, display: "flex", flexDirection: "column", gap: 6, background: t.cardBg, border: `1px solid ${t.border}`, borderRadius: 12, padding: "12px 16px", textAlign: "center" }}>
+                    <span style={{ font: `700 13px ${BODY}`, color: t.ink }}>
+                      Revision {latestSubmission.revision} · {latestSubmission.status === "awaiting-review" ? "waiting for agent review" : latestSubmission.status === "revision-requested" ? "changes requested" : "accepted for final delivery"}
+                    </span>
+                    {latestSubmission.feedback && <span style={{ font: `400 12px/1.5 ${BODY}`, color: t.muted }}>{latestSubmission.feedback}</span>}
                   </div>
-                ))}
+                )}
+                {canSettle && (
+                  <div style={{ alignSelf: "center", maxWidth: 480, display: "flex", flexDirection: "column", gap: 8, background: t.cardBg, border: `1px solid ${t.border}`, borderRadius: 12, padding: "12px 16px", textAlign: "center" }}>
+                    <span style={{ font: `700 13px ${BODY}`, color: t.ink }}>Escrow protection</span>
+                    <span style={{ font: `400 12px/1.5 ${BODY}`, color: t.muted }}>
+                      Continue revisions here when possible. If agreement becomes impossible, GenLayer can review the signed evidence and split the escrow.
+                    </span>
+                    {!showDispute ? (
+                      <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          onClick={() => setShowDispute(true)}
+                          disabled={Boolean(settlementAction)}
+                          style={{ background: t.accentSoft, color: t.accent, border: `1px solid ${t.accent}`, borderRadius: 9, padding: "8px 12px", font: `700 12px ${BODY}`, cursor: settlementAction ? "wait" : "pointer" }}
+                        >
+                          Open dispute
+                        </button>
+                        <button
+                          type="button"
+                          onClick={refund}
+                          disabled={Boolean(settlementAction)}
+                          style={{ background: "transparent", color: t.muted, border: `1px solid ${t.border}`, borderRadius: 9, padding: "8px 12px", font: `600 12px ${BODY}`, cursor: settlementAction ? "wait" : "pointer" }}
+                        >
+                          {settlementAction === "refund" ? "Submitting refund…" : "Cancel & refund buyer"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <label htmlFor="dispute-reason" style={{ font: `600 12px ${BODY}`, color: t.ink, textAlign: "left" }}>
+                          Explain what could not be resolved
+                        </label>
+                        <textarea
+                          id="dispute-reason"
+                          value={disputeReason}
+                          onChange={(event) => setDisputeReason(event.target.value)}
+                          maxLength={2000}
+                          rows={4}
+                          placeholder="Describe the disagreement and point to the relevant requirement, submission, or revision request."
+                          style={{ resize: "vertical", border: `1px solid ${t.border}`, borderRadius: 9, padding: 10, background: t.bg, color: t.ink, font: `400 12px/1.5 ${BODY}` }}
+                        />
+                        <span style={{ font: `400 11px/1.4 ${BODY}`, color: t.muted }}>
+                          Opening a dispute makes the selected job transcript and submission evidence available to GenLayer validators, as stated in the signed agreement.
+                        </span>
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                          <button
+                            type="button"
+                            onClick={() => { setShowDispute(false); setDisputeReason(""); }}
+                            disabled={settlementAction === "dispute"}
+                            style={{ background: "transparent", color: t.muted, border: `1px solid ${t.border}`, borderRadius: 9, padding: "8px 12px", font: `600 12px ${BODY}`, cursor: "pointer" }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={submitDispute}
+                            disabled={disputeReason.trim().length < 10 || settlementAction === "dispute"}
+                            style={{ background: t.accent, color: "#fff", border: "none", borderRadius: 9, padding: "8px 12px", font: `700 12px ${BODY}`, cursor: settlementAction === "dispute" ? "wait" : "pointer", opacity: disputeReason.trim().length < 10 ? 0.5 : 1 }}
+                          >
+                            {settlementAction === "dispute" ? "Opening dispute…" : "Confirm dispute"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {messages.map((m) =>
+                  m.system ? (
+                    <div key={m.id} style={s.dchatSysMsg}>{m.text}</div>
+                  ) : (
+                    <div key={m.id} style={{ display: "flex", justifyContent: m.mine ? "flex-end" : "flex-start" }}>
+                      <div
+                        style={
+                          m.mine
+                            ? { maxWidth: "60%", padding: "12px 16px", borderRadius: 14, font: `400 14px/1.5 ${BODY}`, background: t.accent, color: "#fff" }
+                            : { maxWidth: "60%", padding: "12px 16px", borderRadius: 14, font: `400 14px/1.5 ${BODY}`, background: t.cardBg, border: `1px solid ${t.border}`, color: t.ink }
+                        }
+                      >
+                        {m.attachment ? (
+                          <button
+                            onClick={() => download(m.attachment!)}
+                            title="Decrypt and download"
+                            style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: 0, font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }}
+                          >
+                            <span aria-hidden>📎</span>
+                            <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                              <span style={{ fontWeight: 700, textDecoration: "underline" }}>{m.attachment.filename || "attachment"}</span>
+                              <span style={{ opacity: 0.75, fontSize: 12 }}>Evidence · {fmtBytes(m.attachment.contentLength ?? 0)} · encrypted</span>
+                            </span>
+                          </button>
+                        ) : (
+                          m.text
+                        )}
+                      </div>
+                    </div>
+                  ),
+                )}
               </div>
               {uploading && (
                 <div style={{ padding: "6px 16px", font: `400 12px/1.5 ${BODY}`, color: t.muted, display: "flex", alignItems: "center", gap: 8 }}>
@@ -754,6 +934,19 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
                   <span style={{ flex: 1, height: 4, borderRadius: 2, background: t.border, overflow: "hidden" }}>
                     <span style={{ display: "block", height: "100%", width: `${uploading.pct}%`, background: t.accent, transition: "width .2s" }} />
                   </span>
+                </div>
+              )}
+              {canSubmitForReview && (
+                <div style={{ padding: "8px 16px 0", display: "flex", justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    onClick={sendForReview}
+                    disabled={submitting || !!uploading}
+                    style={{ background: t.accentSoft, color: t.accent, border: `1px solid ${t.accent}`, borderRadius: 10, padding: "9px 14px", font: `700 13px ${BODY}`, cursor: submitting ? "wait" : "pointer" }}
+                    title="Attach evidence first, add an optional note, then send this revision to the agent"
+                  >
+                    {submitting ? "Sending for review…" : latestSubmission?.status === "revision-requested" ? "Send revised work" : "Send for agent review"}
+                  </button>
                 </div>
               )}
               <form style={s.dchatComposerWrap} onSubmit={send}>

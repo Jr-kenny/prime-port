@@ -22,7 +22,10 @@ const run = promisify(execFile);
 // then reports "url contains a newline"; a git URL never has whitespace,
 // so strip all of it.
 const REMOTE = process.env.STATE_REMOTE?.replace(/\s+/g, "") || undefined;
-const EVERY_MS = Number(process.env.BACKUP_EVERY_MS ?? 5 * 60_000);
+// Hugging Face applies per-account commit quotas; five-minute Git snapshots
+// eventually trip its pre-receive throttle. Startup is still backed up
+// immediately, then steady-state snapshots are spaced fifteen minutes apart.
+const EVERY_MS = Number(process.env.BACKUP_EVERY_MS ?? 15 * 60_000);
 const MIRROR = new URL("./.state-mirror/", import.meta.url).pathname;
 const DIRS = [
   ["port-service-data", new URL("./port-service/data/", import.meta.url).pathname],
@@ -31,13 +34,18 @@ const DIRS = [
   ["marketplace-watcher-data", new URL("./marketplace-watcher/data/", import.meta.url).pathname],
   ["payout-data", new URL("./payout/data/", import.meta.url).pathname],
   ["okx-a2a-data", process.env.OKX_AGENT_TASK_HOME ?? new URL("./okx-agent-task/", import.meta.url).pathname],
-  ["hermes-data", process.env.HERMES_HOME ?? new URL("./hermes/", import.meta.url).pathname],
-  ["onchainos-data", `${process.env.HOME ?? "/app"}/.onchainos`],
 ];
 
 const enabled = () => Boolean(REMOTE);
 // Never log REMOTE itself: it carries the credential.
 const remoteHost = () => { try { return new URL(REMOTE).host + new URL(REMOTE).pathname; } catch { return "(unparseable remote)"; } };
+const safeGitError = (error) => String(error?.stderr || error?.message || error)
+  .replaceAll(REMOTE, remoteHost())
+  .replace(/https:\/\/[^\s@]+@/g, "https://[redacted]@")
+  .trim()
+  .split("\n")
+  .slice(-2)
+  .join(" | ");
 const git = (args, cwd = MIRROR) => run("git", args, { cwd });
 
 // On boot: clone the mirror and lay its contents under the live data dirs.
@@ -81,16 +89,49 @@ async function backupOnce() {
     if (!existsSync(live)) continue;
     cpSync(live, `${MIRROR}${name}`, { recursive: true, force: true });
   }
+  // Hermes is installed in the image and its config is recreated at startup;
+  // persisting its runtime cache/logs only introduces generated provider data.
+  rmSync(`${MIRROR}hermes-data`, { recursive: true, force: true });
+  // The encrypted OnchainOS login bundle lives in AWS SSM and is restored by
+  // index.mjs before the Git mirror. Runtime token rotations and diagnostics
+  // are generated state and must not be duplicated into the repository.
+  rmSync(`${MIRROR}onchainos-data`, { recursive: true, force: true });
   await git(["add", "-A"]);
   const { stdout } = await git(["status", "--porcelain"]);
-  if (!stdout.trim()) return false;
-  await git([
-    "-c", "user.name=prime-port-state-sync",
-    "-c", "user.email=state-sync@prime-port.invalid",
-    "commit", "-m", `state @ ${new Date().toISOString()}`,
-  ]);
-  await git(["push", "-u", "origin", "HEAD:main"]);
-  return true;
+  if (stdout.trim()) {
+    await git([
+      "-c", "user.name=prime-port-state-sync",
+      "-c", "user.email=state-sync@prime-port.invalid",
+      "commit", "-m", `state @ ${new Date().toISOString()}`,
+    ]);
+  }
+  // App Runner briefly overlaps old and new instances during a deployment.
+  // Either instance may advance the mirror first, so a plain push can become
+  // non-fast-forward and then fail forever on every later tick. Fetch and
+  // merge the competing snapshot as an ancestor while deliberately keeping
+  // this instance's complete live snapshot. Retry in case both instances
+  // race again between the fetch and push.
+  let lastPushError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await git(["fetch", "origin", "main"]);
+      await git([
+        "-c", "user.name=prime-port-state-sync",
+        "-c", "user.email=state-sync@prime-port.invalid",
+        "merge", "-s", "ours", "--no-edit", "origin/main",
+      ]);
+      const { stdout: aheadStdout } = await git(["rev-list", "--count", "origin/main..HEAD"]);
+      if (Number(aheadStdout.trim()) === 0) return false;
+      await git(["push", "-u", "origin", "HEAD:main"]);
+      return true;
+    } catch (error) {
+      lastPushError = error;
+      if (attempt < 3) {
+        console.log(`[state-sync] snapshot push failed, retrying (${attempt}/3): ${safeGitError(error)}`);
+      }
+    }
+  }
+  throw lastPushError;
 }
 
 export function startBackupLoop() {
@@ -99,7 +140,7 @@ export function startBackupLoop() {
     try {
       if (await backupOnce()) console.log("[state-sync] pushed state snapshot");
     } catch (e) {
-      console.error(`[state-sync] backup failed: ${e.message.split("\n")[0]}`);
+      console.error(`[state-sync] backup failed: ${safeGitError(e)}`);
     }
   };
   setInterval(tick, EVERY_MS);

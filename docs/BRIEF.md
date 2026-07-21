@@ -1,4 +1,4 @@
-# PRIME PORT — BRIEF v2
+# PRIME PORT — BRIEF v3
 ### OKX.AI Genesis Hackathon | Deadline: July 17, 2026 | Team of 4
 ### (supersedes "agnet -freelancer-idea" — architecture changed after verifying the OKX AI Task Marketplace)
 
@@ -6,7 +6,7 @@
 
 ## THE ONE-LINER
 
-AI agents hire real humans for jobs agents can't do. The agent pays through OKX's own marketplace, gets a **port** (a live, private conversation endpoint it controls), and negotiates directly with the freelancers who claim the job. We are the vortex between the two markets, never the judge, never the bank.
+AI agents hire real humans for jobs agents can't do. The agent buys one public Prime Port service through OKX, gets a **port** it controls, and negotiates directly with freelancers. A dual-signed X Layer escrow protects the wage; GenLayer judges only actual disputes.
 
 ## THE PITCH
 
@@ -25,8 +25,8 @@ AI agents hire real humans for jobs agents can't do. The agent pays through OKX'
  agent-facing storefront              human-facing marketplace
  ─────────────────────────           ─────────────────────────
  agent finds Prime Port ASP    ──►    job page on our site
- task + escrow + state machine        auto-post to X / Telegram
- native dispute evaluators            freelancers claim (email login,
+ one x402 publication service         auto-post to X / Telegram
+                                      freelancers claim (email login,
                                       embedded wallet, no crypto UX)
                     \                /
                      \              /
@@ -37,53 +37,53 @@ AI agents hire real humans for jobs agents can't do. The agent pays through OKX'
              scrapped after settlement
 ```
 
-- **Layer 1 (agent side)**: Prime Port is a registered ASP on the OKX AI Task Marketplace (XLayer). The agent is our customer. Escrow, task state machine, and dispute court are all OKX-native. We build none of it.
+- **Layer 1 (agent side)**: Prime Port is a registered ASP on the OKX AI Task Marketplace (X Layer). The storefront exposes one x402 publication service.
 - **Layer 2 (human side)**: entirely ours. Job pages, social fan-out, claim flow, embedded wallets, the freelancer chat UI.
-- **The port** connects the two. It is the product.
+- **The port** connects the two. Internal orchestration handles the later wage escrow; it is not a second marketplace listing.
 
 ---
 
 ## FULL LIFECYCLE (all confirmed against the live protocol docs / CLI)
 
-1. **Agent engages Prime Port** on the OKX marketplace and buys the **publish task**: a flat service fee (small, exact number proposed in the payout lane issue). This pays for fan-out, the port, and the key. It settles on key delivery and is independent of whether a hire ever happens.
+1. **Agent engages Prime Port** through the public paid MCP endpoint. Its flat x402 fee pays for fan-out, the port, and the key, independent of whether a hire ever happens.
 2. **We mint the port**: a fresh XMTP identity for this job. The agent gets access to it (an XMTP installation on the port inbox, NOT the root key) and operates it on its own power from here.
 3. **Auto-distribution**: job page renders on our site, fan-out to X + Telegram. Socials are adverts only; claiming happens on our site.
 4. **Freelancers claim**: email/Google sign-in, embedded wallet provisioned (MPC, e.g. Privy — we can NOT sign for them), each claimer gets a private E2E channel with the agent inside the port. Nobody sees anyone else's negotiation.
 5. **Negotiation**: agent talks to every candidate directly. Clarifies, haggles, plans. All messages wallet-signed.
-6. **Hire = pay.** Agent calls `hire(candidate)`. Freelancer confirms payout address (embedded wallet by default, any address they choose). Terms + payout address + transcript hash get dual-signed and committed. `hire()` opens the **job task** on the marketplace at the port-negotiated price (only possible against a port paid for by a publish task). Marketplace acceptance fires -> **escrow locks now, not before** (native: funds escrow at status 1). Losing candidates' channels close and are never seen by anyone.
-7. **Work + delivery**: freelancer submits evidence through the port (URLs, files, media, tx hashes — see job scope below). UI shows "start work" only after escrow is locked.
+6. **Hire authorization.** Agent calls `hire(candidate)`. Freelancer confirms payout address. The terms and escrow fields are dual-signed. The buyer approves and funds the exact USD₮0 amount in `PrimePortEscrow`; only the confirmed event means **escrow locked**.
+7. **Work + review loop**: freelancer submits evidence through the port. The buyer can request specific revisions repeatedly. Only an accepted revision becomes release-ready.
 8. **Settlement**:
    - Agent approves -> escrow releases.
-   - Agent goes silent -> protocol timeout auto-completes -> freelancer still paid. (Native.)
-   - Agent disputes -> OKX's staked evaluators rule -> escrow obeys. (Native. We build no judge in v1.)
-9. **Payout**: OKX releases to the ASP account -> funds flow into our per-job **forwarding contract** on XLayer, registered at hire time to the freelancer's address. `forward(jobId)` is callable by anyone and can only pay the registered address, **in full**: our fee was already collected by the publish task, so 100% of the job escrow can only ever reach the freelancer. We hold zero discretion over destination or timing.
+   - Freelancer cancels -> escrow refunds the buyer in full.
+   - Either party disputes or the buyer stays silent -> escrow freezes, GenLayer judges signed evidence, and the resolver applies the finalized split.
+9. **Payout**: release goes directly to the signed freelancer payout address. A dispute can split between provider and buyer according to GenLayer's finalized basis-point award. Prime Port receives none of the wage.
 10. **Scrap**: after final settlement + a short quiet window (~1h; the timer stalls while anything is unresolved), we archive the signed transcript, revoke the agent's XMTP installation, and retire the port identity. Key dead, address non-reusable.
 
 ---
 
-## PAYMENT MODEL (two tasks, one rail)
+## PAYMENT MODEL (two stages, one public service)
 
-Every job involves two purchases by the agent, and both are ordinary OKX marketplace tasks against our listed service, so both inherit native escrow, timeout auto-complete, and the evaluator court. We add no payment rail of our own.
+The storefront advertises only the paid port endpoint. The negotiated wage is an internal, post-hire X Layer escrow action, so an OKX discovery test sees one independently correct public service.
 
-1. **The publish task (our service fee).** Flat and small, priced before any human is involved. Escrow locks when the agent accepts, and delivery is the fan-out plus the port plus the temporary key, all timestamped and provable from our side. It settles on approval or timeout. Our revenue is fully decoupled from the job's outcome: a job that gets no claims, or a hire that goes sour, does not claw back the fee for a service that was demonstrably performed.
-2. **The job task (the freelancer's money).** Opened by `hire()` at whatever price the agent and the freelancer negotiated inside the port. Escrow locks at acceptance, the hire commitment (jobId, price, payout address, transcript hash) binds this task to that specific port, and on release the funds route through the forwarding contract to the freelancer's registered address **in full**. No fee split at this stage, ever.
+1. **The public x402 purchase (our service fee).** Flat and priced before any human is involved. Its delivery is the job fan-out plus the private port.
+2. **The internal wage escrow (the freelancer's money).** Created only after `hire()` at the negotiated price. Both wallets sign the commitment, payout, token, amount, deadline, chain, and contract before funding.
 
-Sequencing is enforced by us, not by OKX: `hire()` refuses to open a job task unless it references a live port created by a paid publish task. The two tasks also keep their dispute surfaces separate. A publish dispute argues "did the port get delivered", which our own evidence answers. A job dispute argues "was the work good", which the transcript and evidence archive answer.
+Sequencing is enforced by Prime Port and the contract: the hire flow requires a paid port, and `fund` requires two matching signatures. The review loop stays off-chain so ordinary revision requests do not become contract disputes.
 
-**Listing status**: resubmitted 2026-07-12 with both services declared: "Job publishing" at a flat 1 USDT fee and "Freelancer hiring" with no fixed fee (the port negotiation sets it per job). The storefront description says it plainly: we never do the job, we bring the humans who do. The QA review clock restarted with that truthful text, by choice.
+**Listing architecture**: Prime Port Connect #5982 exposes only `Publish a human job`. Escrow and dispute steps are internal orchestration behind that service.
 
-In everyday terms: the agent pays us a small posting fee up front, like paying a job board to run an ad, and that money is ours the moment the ad is up and the phone line is handed over. The wage for the actual work is a second, separate payment that sits in the marketplace's vault until the work is approved, and when it comes out, every cent of it can only go to the worker. We already got ours; we cannot touch theirs.
+In everyday terms: the agent pays us a small posting fee up front, like paying a job board to run an ad. The wage is separate and sits in a narrow X Layer contract. Happy-path approval pays the worker; cancellation refunds the buyer; disagreement invokes GenLayer.
 
 ---
 
-## TRUST MODEL (we never judge, we never bank)
+## TRUST MODEL
 
-- **Happy path needs no judge.** Satisfaction settles jobs, clocks settle silence. The court is a fire escape, not a feature.
-- **The rare tie** (agent rejects, freelancer insists) falls through to OKX's native evaluator court. v1 ships zero arbitration code.
+- **Happy path needs no judge.** Satisfaction releases and voluntary cancellation refunds. The court is a fire escape, not a feature.
+- **The rare tie** (agent rejects, freelancer insists) uses a content-addressed evidence bundle and GenLayer intelligent contract verdict.
 - **Transcripts can't be gamed**: XMTP has no message editing at protocol level; deletes never reach the counterparty's signed copy; and the transcript hash is committed at hire. XMTP mainnet expires messages (~6 months), so we archive at settlement, never rely on the network as storage.
 - **We can't forge conversations**: freelancer keys are MPC embedded wallets we cannot use without the user's session.
-- **We can't touch the pay**: the forwarding contract is the proof.
-- **Stretch / roadmap**: a GenLayer-backed evaluator (intelligent contract ruling on evidence-vs-criteria, cast as a native evaluator vote) to make layer-2 disputes smarter than "mirror OKX." Kenny's home turf; follows the Internet Court adapter shapes (rubric, content-addressed evidence bundle, reasoned decision).
+- **The app cannot redirect the pay**: `PrimePortEscrow` has no owner, mutable payout, upgrade, or arbitrary withdrawal.
+- **The resolver is narrow**: it can only apply a split after a party has frozen a funded job in `Disputed`; it cannot alter normal funded jobs.
 
 ---
 
@@ -103,8 +103,8 @@ Rule: build the evidence pipe to carry ANY media from day one. Attempt verificat
 
 | Lane | Owner | Deliverable |
 |---|---|---|
-| **Backend / protocol** | Kenny | ASP registration + onchainos integration, port lifecycle (mint / installation grant / revoke / scrap), MCP tools (`publish`, `get_offers`, `negotiate`, `hire`, `approve`), GenLayer evaluator (stretch) |
-| **Payout + contracts** | open, grab it | Forwarding contract on XLayer (register-at-hire, forward-by-anyone, forwards in full), release watcher |
+| **Backend / protocol** | Kenny | ASP registration, port lifecycle, MCP tools, escrow event watcher, evidence manifests, GenLayer relayer |
+| **Payout + contracts** | open, grab it | `PrimePortEscrow` on X Layer plus the GenLayer judge intelligent contract |
 | **Frontend** | open, grab it | Job pages, claim flow with embedded wallet onboarding, freelancer chat UI (no edit/delete affordances), evidence submission |
 | **Distribution + demo** | open, grab it | X + Telegram posting pipeline, demo storyboard, submission page, pitch |
 
@@ -117,27 +117,27 @@ Load-bearing Day 1 spec: **the port access credential + the hire commitment obje
 1. Agent engages Prime Port, pays the flat posting fee, and publishes a job with real criteria (none of the wage is down yet: say this out loud, it's the humanly-natural part)
 2. Job hits X/Telegram, **a real phone buzzes**
 3. A human claims via email login and negotiates the price UP, talking to the agent directly in the port
-4. Agent calls `hire()` -> escrow locks live on XLayer
-5. Human submits evidence, agent approves, release -> forwarding contract -> **freelancer's wallet, on-chain, live**
-6. Stretch: agent goes silent instead, timeout fires, human still gets paid. "The clock is the only judge most jobs ever meet."
+4. Agent calls `hire()`; both sides sign; buyer funds -> centered **escrow locked** notice
+5. Human submits evidence, receives one revision request, resubmits, and agent releases -> **freelancer's wallet, on-chain, live**
+6. Optional second clip: open a dispute -> evidence hash -> GenLayer verdict -> X Layer split receipt
 
 ---
 
 ## CONFIRMED FACTS (don't re-litigate these)
 
-- OKX AI Task Marketplace exists on XLayer: native escrow (paymentMode 1), 11-state lifecycle, XMTP agent channels, ERC-8004 identity, staked evaluator disputes, timeout auto-complete/auto-refund.
-- Negotiation happens BEFORE escrow (status 0), funds lock at acceptance (status 1). Confirmed in state machine docs.
-- Escrow releases to the ASP account only; no arbitrary beneficiary. Hence the forwarding contract.
+- OKX advised that dependent steps should be combined into a single listed service with orchestration handled internally.
+- Prime Port therefore uses OKX x402 for the public publication purchase and its own narrow X Layer contract for the post-negotiation wage.
 - XMTP: no protocol-level message editing; per-inbox installations are revocable (this is the port access mechanism); mainnet message expiry ~6 months (archive at settlement).
-- Internet Court repo = adapter spec, not a deployed court. GenLayer path = write our own contract following their shapes. Stretch, not v1.
+- GenLayer supplies the dispute judge; the finalized result is relayed to X Layer and bound to the same evidence hash.
 - Kenny's wallet gate passes on onchainos (v4.2.1); ASP identity not yet registered.
 
 ## OPEN ITEMS
 
-- [x] Register Prime Port ASP identity — agent #5021, under review since 2026-07-11 (see docs/asp-registration.md)
+- [x] Keep one public identity and one public service — Prime Port Connect #5982
 - [ ] Fill the three empty lanes
 - [ ] Verify agent-side UX for holding a port installation (how an OKX-side agent runs an XMTP client against our inbox — needs a spike)
-- [x] Forwarding contract: no wage fee, redeployed for OKX USD₮0 on X Layer mainnet 2026-07-14 at `0xe3f11D89e585e2F0009ee5c6f105861525f70712` (see contracts/README.md)
+- [x] New `PrimePortEscrow` and GenLayer judge implemented and locally tested
+- [ ] Deploy the judge, resolver, and escrow; then run a tiny mainnet wage test
 - [ ] Pick embedded wallet provider (Privy vs Web3Auth vs Coinbase)
 - [ ] ASP listing copy on the OKX marketplace (this is the storefront — treat it like the landing page)
 
@@ -145,7 +145,7 @@ Load-bearing Day 1 spec: **the port access credential + the hire commitment obje
 
 - Fiat payouts: Phase 2, "pending licensing."
 - Reddit auto-posting: ban magnet. X + Telegram only.
-- Being the judge: never. v1 doesn't even host one.
+- Being the judge in the app server: never. Disputes go to GenLayer.
 - Custody: never discretionary. Port keys we mint and burn; pay routes only where the freelancer signed.
 
 ---
@@ -154,6 +154,6 @@ Load-bearing Day 1 spec: **the port access credential + the hire commitment obje
 
 1. **The port is the product.** OKX is the storefront, humans are the supply, the port is why either side shows up.
 2. **No power is given to the agent** anywhere else. Here it holds the key card.
-3. **We are rails, never referee, never bank.** The clocks and contracts judge. We mint ports and burn them.
+3. **The happy path stays simple.** Sign, fund, revise, approve. GenLayer appears only for a real dispute.
 
 Now go build the nice thing. 🏝️

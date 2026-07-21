@@ -1,0 +1,30 @@
+[Unit]
+Description=Prime Port backend
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+ExecStartPre=-/usr/bin/docker rm -f prime-port
+ExecStartPre=/usr/bin/docker pull ghcr.io/jr-kenny/prime-port:latest
+ExecStart=/usr/bin/docker run --name prime-port \
+  --env-file /etc/prime-port/prime-port.env \
+  --publish 127.0.0.1:7860:7860 \
+  --memory 1400m \
+  --memory-swap 1800m \
+  --volume /var/lib/prime-port/onchainos:/app/.onchainos \
+  --volume /var/lib/prime-port/okx-agent-task:/app/okx-agent-task \
+  --volume /var/lib/prime-port/port-service-data:/app/port-service/data \
+  --volume /var/lib/prime-port/mcp-server-data:/app/mcp-server/data \
+  --volume /var/lib/prime-port/genlayer-relayer-data:/app/genlayer-relayer/data \
+  --volume /var/lib/prime-port/distribution-data:/app/distribution/data \
+  --volume /var/lib/prime-port/marketplace-watcher-data:/app/marketplace-watcher/data \
+  --volume /var/lib/prime-port/payout-data:/app/payout/data \
+  ghcr.io/jr-kenny/prime-port:latest
+ExecStop=/usr/bin/docker stop -t 30 prime-port
+
+[Install]
+WantedBy=multi-user.target
