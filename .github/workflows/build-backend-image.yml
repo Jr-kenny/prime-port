@@ -16,6 +16,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: docker/login-action@v3
@@ -23,6 +24,11 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: arn:aws:iam::572908218886:role/prime-port-github-ecr
+          aws-region: us-east-1
+      - uses: aws-actions/amazon-ecr-login@v2
       - uses: docker/build-push-action@v6
         with:
           context: backend
@@ -30,3 +36,5 @@ jobs:
           tags: |
             ghcr.io/jr-kenny/prime-port:latest
             ghcr.io/jr-kenny/prime-port:${{ github.sha }}
+            572908218886.dkr.ecr.us-east-1.amazonaws.com/prime-port:latest
+            572908218886.dkr.ecr.us-east-1.amazonaws.com/prime-port:${{ github.sha }}
