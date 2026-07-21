@@ -8,6 +8,7 @@ import {
   escrowAbi,
   escrowConfig,
 } from "./escrow.mjs";
+import { nextEscrowRange } from "./escrow-watcher.mjs";
 
 const config = escrowConfig({
   ESCROW_ADDRESS: "0x1111111111111111111111111111111111111111",
@@ -46,4 +47,10 @@ test("funding request contains exact approve and fund calldata", () => {
   assert.equal(decoded.args[0], pendingHire.hash);
   assert.equal(decoded.args[4], 12_500_000n);
   assert.equal(request.approval.to, config.token);
+});
+
+test("escrow replay respects X Layer's 100-block log limit", () => {
+  assert.deepEqual(nextEscrowRange(99n, 350n), { fromBlock: 100n, toBlock: 199n });
+  assert.deepEqual(nextEscrowRange(299n, 350n), { fromBlock: 300n, toBlock: 350n });
+  assert.equal(nextEscrowRange(350n, 350n), null);
 });

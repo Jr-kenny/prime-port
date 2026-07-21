@@ -140,8 +140,13 @@ function ensureOkxLogin() {
     const command = hasOnchainosEmailSession
       ? promisify(execFile)("onchainos", ["wallet", "status"], { timeout: 120_000 }).then(({ stdout }) => {
         const status = JSON.parse(stdout);
-        if (!status?.ok || !status?.data?.loggedIn || status?.data?.lastLoginMode !== "email") {
+        if (!status?.ok || !status?.data?.loggedIn) {
           throw new Error("restored OnchainOS email session is not logged in");
+        }
+        const expectedEmail = process.env.EXPECTED_OKX_EMAIL?.trim().toLowerCase();
+        const actualEmail = status.data.email?.trim().toLowerCase();
+        if (expectedEmail && actualEmail !== expectedEmail) {
+          throw new Error(`restored OnchainOS session belongs to ${actualEmail || "an unknown account"}, expected ${expectedEmail}`);
         }
         console.log(`[prime-port] onchainos email session ready (${status.data.email || "email account"})`);
       })

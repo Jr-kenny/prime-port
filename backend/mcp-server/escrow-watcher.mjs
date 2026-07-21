@@ -4,6 +4,16 @@ import { escrowAbi } from "./escrow.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+export function nextEscrowRange(cursor, safeHead, maxBlockRange = 100n) {
+  if (maxBlockRange < 1n) throw new Error("ESCROW_MAX_BLOCK_RANGE must be at least 1");
+  if (safeHead <= cursor) return null;
+  const fromBlock = cursor + 1n;
+  const toBlock = fromBlock + maxBlockRange - 1n < safeHead
+    ? fromBlock + maxBlockRange - 1n
+    : safeHead;
+  return { fromBlock, toBlock };
+}
+
 export function startEscrowWatcher({ config, cursorPath, onEvent, env = process.env }) {
   if (!config.enabled) {
     console.log("[escrow-watcher] ESCROW_ADDRESS not set, watcher disabled");
@@ -19,6 +29,8 @@ export function startEscrowWatcher({ config, cursorPath, onEvent, env = process.
   const client = createPublicClient({ chain, transport: http(config.rpcUrl) });
   const pollMs = Number(env.ESCROW_POLL_MS ?? 5_000);
   const confirmations = BigInt(env.ESCROW_CONFIRMATIONS ?? 2);
+  const maxBlockRange = BigInt(env.ESCROW_MAX_BLOCK_RANGE ?? 100);
+  if (maxBlockRange < 1n) throw new Error("ESCROW_MAX_BLOCK_RANGE must be at least 1");
   let stopped = false;
 
   const readCursor = () => {
@@ -44,12 +56,13 @@ export function startEscrowWatcher({ config, cursorPath, onEvent, env = process.
             ? (safeHead > 100n ? safeHead - 100n : 0n)
             : (configured > 0n ? configured - 1n : 0n);
         }
-        if (safeHead > cursor) {
+        const range = nextEscrowRange(cursor, safeHead, maxBlockRange);
+        if (range) {
           const logs = await client.getContractEvents({
             address: config.address,
             abi: escrowAbi,
-            fromBlock: cursor + 1n,
-            toBlock: safeHead,
+            fromBlock: range.fromBlock,
+            toBlock: range.toBlock,
             strict: true,
           });
           logs.sort((a, b) => {
@@ -65,7 +78,7 @@ export function startEscrowWatcher({ config, cursorPath, onEvent, env = process.
               logIndex: Number(log.logIndex),
             });
           }
-          cursor = safeHead;
+          cursor = range.toBlock;
           writeCursor(cursor);
         }
       } catch (error) {
