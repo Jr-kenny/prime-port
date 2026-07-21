@@ -32,9 +32,12 @@ ERC-1271 smart-account signatures are supported.
 
 ## Current deployment state
 
-`PrimePortEscrow` is tested but not yet deployed. Do not point production at an
-address until its `token()` and `resolver()` immutables have been checked on X
-Layer and the deployment block has been saved as `ESCROW_START_BLOCK`.
+`PrimePortEscrow` is deployed on X Layer mainnet at
+[`0xcEdB9F7e3f12088dBe85b671393928cdEB4EdFdb`](https://www.oklink.com/xlayer/address/0xcEdB9F7e3f12088dBe85b671393928cdEB4EdFdb).
+Its USD₮0 token is `0x779ded0c9e1022225f8e0630b35a9b54be713736`,
+its immutable resolver is `0x171DC5af0f64aEbEDbD281F79d2c8034AA7Af4DB`,
+and its deployment block is `65891610`. Both a tiny direct release and a tiny
+GenLayer-resolved dispute have settled successfully against this deployment.
 
 The older `JobForwarder` remains deployed at
 `0xe3f11D89e585e2F0009ee5c6f105861525f70712`. It is immutable historical
@@ -66,4 +69,5 @@ forge script script/DeployEscrow.s.sol \
 ```
 
 Deploying or funding this contract is a real financial action and is not done
-by the local test suite.
+by the local test suite. The live verification transactions used deliberately
+small USD₮0 amounts.

@@ -31,10 +31,12 @@ relays that result to X Layer.
 - `ENABLE_MARKETPLACE_WATCHER=0`: the retired shared settlement worker must stay
   disabled for this architecture.
 
-Production state must live on a persistent disk. App Runner's container
-filesystem is ephemeral and is not safe for XMTP identities, job state,
-evidence manifests, or the escrow block cursor. The included Lightsail systemd
-service mounts those directories under `/var/lib/prime-port`.
+The current AWS App Runner deployment restores the encrypted OnchainOS login
+bundle from SSM and mirrors Prime Port's port/XMTP/job state to a private remote
+at startup and on a quota-safe schedule. App Runner's local filesystem remains
+ephemeral; a future move to the included Lightsail systemd service can instead
+mount those directories under `/var/lib/prime-port` for a smaller recovery
+window.
 
 ## Verify locally
 

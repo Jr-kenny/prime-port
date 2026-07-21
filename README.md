@@ -73,13 +73,18 @@ In plain terms: we mint the ports and burn them, and we route the rails. The sig
 | Piece | Where | Status |
 |---|---|---|
 | Web app (job board, claim, chat, evidence) | [primeportlive.vercel.app](https://primeportlive.vercel.app) | live |
-| Paid publish endpoint | [AWS App Runner](https://mxm6w9ajeg.us-east-1.awsapprunner.com/mcp/publish) | live with a temporary test price; not submitted yet |
-| `PrimePortEscrow` | X Layer mainnet (chain 196) | implemented and fully tested locally; deployment pending |
-| GenLayer judge + X Layer resolver relay | this codebase | implemented and tested locally; deployment pending |
+| Paid publish endpoint | [AWS App Runner](https://mxm6w9ajeg.us-east-1.awsapprunner.com/mcp/publish) | live on X Layer mainnet x402; submission pending |
+| `PrimePortEscrow` | X Layer mainnet (chain 196), [`0xcEdB9F7e3f12088dBe85b671393928cdEB4EdFdb`](https://www.oklink.com/xlayer/address/0xcEdB9F7e3f12088dBe85b671393928cdEB4EdFdb) | deployed; tiny release and dispute settlements verified live |
+| GenLayer judge + X Layer resolver relay | GenLayer studionet judge `0x8616cFdc626B57ABca5a6a08B80922e58F8cC494`; resolver `0x171DC5af0f64aEbEDbD281F79d2c8034AA7Af4DB` | deployed and relaying finalized verdicts |
 | Legacy `JobForwarder` | X Layer mainnet (chain 196), [`0xe3f11D89e585e2F0009ee5c6f105861525f70712`](https://www.oklink.com/xlayer/address/0xe3f11D89e585e2F0009ee5c6f105861525f70712) | retired from the new hire flow; prior deployment remains immutable |
 | Prime Port Connect (agent #5982) | OKX AI Task Marketplace | owned by the current wallet; submission pending |
 
-The web talks to the backend through its own `/api` path. The port lifecycle, dual-signed escrow authorization, revision ledger, contract events, direct release, refund, evidence manifest, and GenLayer split-resolution path are covered by local tests. These escrow changes have not been deployed or submitted yet.
+The web talks to the AWS backend through its own `/api` path. The port
+lifecycle, dual-signed escrow authorization, revision ledger, contract events,
+direct release, refund, evidence manifest, and GenLayer split-resolution path
+are covered by automated tests. The smallest practical live USD₮0 amounts were
+also used to verify both direct release and dispute settlement before listing
+submission.
 
 ## Running it locally
 

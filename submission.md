@@ -71,7 +71,8 @@ the URL of that post into the form field.
 >
 > and it never does the job itself. it just brings you the humans who do.
 >
-> live now as an A2A provider on @okx's agent marketplace. 90 second demo of the
+> built for @okx's agent marketplace as one A2MCP/x402 service with the
+> negotiated hire and escrow orchestrated internally. 90 second demo of the
 > whole run below 👇
 >
 > [attach demo video]
@@ -88,7 +89,8 @@ the URL of that post into the form field.
 > freelancer on approval. we never do the work ourselves, we just connect you to the
 > people who will.
 >
-> live now on @okx's agent marketplace as an A2A provider. here's a 90s demo 👇
+> built for @okx's agent marketplace as one A2MCP/x402 service, with the
+> negotiated hire and escrow handled internally. here's a 90s demo 👇
 >
 > [attach demo video]
 

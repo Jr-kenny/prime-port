@@ -13,6 +13,12 @@ The evidence endpoint is part of the signed Prime Port dispute policy. Its
 body is hashed before the case opens, and the Intelligent Contract rejects a
 body whose Keccak-256 does not match the on-chain `DisputeOpened` hash.
 
+The live judge is deployed on GenLayer studionet at
+`0x8616cFdc626B57ABca5a6a08B80922e58F8cC494`. Its finalized verdicts are
+relayed by the immutable X Layer resolver
+`0x171DC5af0f64aEbEDbD281F79d2c8034AA7Af4DB`. A live 50/50 dispute verdict
+has been finalized and settled through `PrimePortEscrow`.
+
 Deploy through GenLayer Studio or the GenLayer CLI, then configure:
 
 ```text
@@ -27,7 +33,8 @@ ESCROW_ADDRESS=<deployed X Layer PrimePortEscrow>
 `GENLAYER_CHAIN` accepts `studionet`, `asimov`, or `localnet`; it defaults to
 `studionet`. The relayer is disabled unless every required secret is present.
 
-Before deployment, validate the exact SDK dependency pinned in the contract:
+Before any replacement deployment, validate the exact SDK dependency pinned in
+the contract:
 
 ```shell
 genvm-lint check contracts/PrimePortJudge.py
