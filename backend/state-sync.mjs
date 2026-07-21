@@ -22,7 +22,10 @@ const run = promisify(execFile);
 // then reports "url contains a newline"; a git URL never has whitespace,
 // so strip all of it.
 const REMOTE = process.env.STATE_REMOTE?.replace(/\s+/g, "") || undefined;
-const EVERY_MS = Number(process.env.BACKUP_EVERY_MS ?? 5 * 60_000);
+// Hugging Face applies per-account commit quotas; five-minute Git snapshots
+// eventually trip its pre-receive throttle. Startup is still backed up
+// immediately, then steady-state snapshots are spaced fifteen minutes apart.
+const EVERY_MS = Number(process.env.BACKUP_EVERY_MS ?? 15 * 60_000);
 const MIRROR = new URL("./.state-mirror/", import.meta.url).pathname;
 const DIRS = [
   ["port-service-data", new URL("./port-service/data/", import.meta.url).pathname],
