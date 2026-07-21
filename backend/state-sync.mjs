@@ -11,7 +11,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
 
 const run = promisify(execFile);
 // Full https git URL with the credential embedded. Works with any git host:
@@ -33,12 +32,6 @@ const DIRS = [
   ["payout-data", new URL("./payout/data/", import.meta.url).pathname],
   ["okx-a2a-data", process.env.OKX_AGENT_TASK_HOME ?? new URL("./okx-agent-task/", import.meta.url).pathname],
 ];
-const ONCHAINOS_HOME = `${process.env.HOME ?? "/app"}/.onchainos`;
-// Persist only the encrypted/login-critical bundle. audit.jsonl and the DNS
-// cache are generated diagnostics, may contain provider responses that Git
-// hosts reject during secret scanning, and are unnecessary for recovery.
-const FILES = ["keyring.enc", "machine-identity", "session.json", "wallets.json"]
-  .map((name) => [`onchainos-data/${name}`, `${ONCHAINOS_HOME}/${name}`]);
 
 const enabled = () => Boolean(REMOTE);
 // Never log REMOTE itself: it carries the credential.
@@ -79,12 +72,6 @@ export async function restoreState() {
     cpSync(src, live, { recursive: true, force: false, errorOnExist: false });
     console.log(`[state-sync] restored ${name} (${readdirSync(src).length} entries)`);
   }
-  for (const [name, live] of FILES) {
-    const src = `${MIRROR}${name}`;
-    if (!existsSync(src) || existsSync(live)) continue;
-    mkdirSync(dirname(live), { recursive: true });
-    cpSync(src, live, { force: false, errorOnExist: false });
-  }
 }
 
 // Attachments can be up to 50 MB; hosts like Hugging Face require LFS for
@@ -102,15 +89,10 @@ async function backupOnce() {
   // Hermes is installed in the image and its config is recreated at startup;
   // persisting its runtime cache/logs only introduces generated provider data.
   rmSync(`${MIRROR}hermes-data`, { recursive: true, force: true });
-  // Remove legacy generated OnchainOS diagnostics from older snapshots, then
-  // reconstruct this directory from the four recovery files only.
+  // The encrypted OnchainOS login bundle lives in AWS SSM and is restored by
+  // index.mjs before the Git mirror. Runtime token rotations and diagnostics
+  // are generated state and must not be duplicated into the repository.
   rmSync(`${MIRROR}onchainos-data`, { recursive: true, force: true });
-  for (const [name, live] of FILES) {
-    if (!existsSync(live)) continue;
-    const dest = `${MIRROR}${name}`;
-    mkdirSync(dirname(dest), { recursive: true });
-    cpSync(live, dest, { force: true });
-  }
   await git(["add", "-A"]);
   const { stdout } = await git(["status", "--porcelain"]);
   if (stdout.trim()) {
