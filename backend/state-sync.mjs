@@ -32,7 +32,6 @@ const DIRS = [
   ["marketplace-watcher-data", new URL("./marketplace-watcher/data/", import.meta.url).pathname],
   ["payout-data", new URL("./payout/data/", import.meta.url).pathname],
   ["okx-a2a-data", process.env.OKX_AGENT_TASK_HOME ?? new URL("./okx-agent-task/", import.meta.url).pathname],
-  ["hermes-data", process.env.HERMES_HOME ?? new URL("./hermes/", import.meta.url).pathname],
 ];
 const ONCHAINOS_HOME = `${process.env.HOME ?? "/app"}/.onchainos`;
 // Persist only the encrypted/login-critical bundle. audit.jsonl and the DNS
@@ -100,6 +99,9 @@ async function backupOnce() {
     if (!existsSync(live)) continue;
     cpSync(live, `${MIRROR}${name}`, { recursive: true, force: true });
   }
+  // Hermes is installed in the image and its config is recreated at startup;
+  // persisting its runtime cache/logs only introduces generated provider data.
+  rmSync(`${MIRROR}hermes-data`, { recursive: true, force: true });
   // Remove legacy generated OnchainOS diagnostics from older snapshots, then
   // reconstruct this directory from the four recovery files only.
   rmSync(`${MIRROR}onchainos-data`, { recursive: true, force: true });
