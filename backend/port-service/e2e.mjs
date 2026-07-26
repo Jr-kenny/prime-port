@@ -37,11 +37,13 @@ class DevRemoteAttachmentCodec extends RemoteAttachmentCodec {
 const codecs = [new DevRemoteAttachmentCodec(), new AttachmentCodec()];
 
 const SVC = "http://localhost:8791";
+const SERVICE_TOKEN = process.env.PORT_SERVICE_TOKEN;
+if (!SERVICE_TOKEN) throw new Error("PORT_SERVICE_TOKEN is required for the port-service E2E");
 const jobId = `e2e-${Date.now()}`;
 const api = async (method, path, body, headers = {}) => {
   const r = await fetch(`${SVC}${path}`, {
     method,
-    headers,
+    headers: { authorization: `Bearer ${SERVICE_TOKEN}`, ...headers },
     body: body ? JSON.stringify(body) : undefined,
   });
   const j = await r.json();
@@ -74,7 +76,7 @@ ok("agent installation lands on port inbox", agent.inboxId === port.inboxId);
 // wrong token must fail
 const denied = await fetch(`${SVC}/ports/${jobId}/grant/sign`, {
   method: "POST",
-  headers: { "x-grant-token": "nope" },
+  headers: { authorization: `Bearer ${SERVICE_TOKEN}`, "x-grant-token": "nope" },
   body: JSON.stringify({ message: "gimme" }),
 });
 ok("grant rejects bad token", denied.status === 400);

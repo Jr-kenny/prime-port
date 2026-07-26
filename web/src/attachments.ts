@@ -10,14 +10,13 @@ import {
   RemoteAttachmentCodec,
 } from "@xmtp/content-type-remote-attachment";
 import type { RemoteAttachment } from "@xmtp/content-type-remote-attachment";
+import { getAuthToken } from "./api";
 
 export { ContentTypeRemoteAttachment };
 export type { RemoteAttachment };
 
 // Must match the port service's cap; checked here first for a fast error.
 export const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
-
-const PORT_SVC = (import.meta.env.VITE_PORT_SVC as string | undefined) ?? "http://localhost:8791";
 
 const toHex = (u8: Uint8Array) => Array.from(u8, (b) => b.toString(16).padStart(2, "0")).join("");
 
@@ -61,7 +60,10 @@ export async function encryptAndUpload(
   const uploaded = await new Promise<{ url: string; contentDigest: string; contentLength: number }>(
     (resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open("POST", `${PORT_SVC}/ports/${encodeURIComponent(jobId)}/attachments`);
+      xhr.open("POST", `/api/jobs/${encodeURIComponent(jobId)}/attachments`);
+      const token = getAuthToken();
+      if (token) xhr.setRequestHeader("authorization", `Bearer ${token}`);
+      xhr.setRequestHeader("content-type", "application/octet-stream");
       xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
       xhr.onload = () => {
         try {

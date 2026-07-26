@@ -17,6 +17,7 @@ import { transcriptHash } from "../commitment/commitment.mjs";
 
 const ENV = process.env.XMTP_ENV ?? "dev";
 const PORT = Number(process.env.PORT ?? 8791);
+const SERVICE_TOKEN = process.env.PORT_SERVICE_TOKEN ?? randomBytes(32).toString("hex");
 const DATA = process.env.PORT_DATA_DIR
   ? `${process.env.PORT_DATA_DIR.replace(/\/$/, "")}/`
   : new URL("./data/", import.meta.url).pathname;
@@ -417,6 +418,9 @@ createServer(async (req, res) => {
       res.writeHead(200, { "content-type": "application/octet-stream", "content-length": payload.length });
       return res.end(payload);
     }
+    if (req.headers.authorization !== `Bearer ${SERVICE_TOKEN}`) {
+      return reply(401, { error: "internal service authentication required" });
+    }
     const upload = path.match(/^\/ports\/([\w.-]+)\/attachments$/);
     if (upload && req.method === "POST") return reply(200, await acceptUpload(req, upload[1]));
 
@@ -434,4 +438,4 @@ createServer(async (req, res) => {
     console.error(`[port-service] ${req.method} ${req.url}:`, e.message);
     reply(400, { error: e.message });
   }
-}).listen(PORT, () => console.log(`[port-service] listening on :${PORT} (env ${ENV})`));
+}).listen(PORT, "127.0.0.1", () => console.log(`[port-service] listening on 127.0.0.1:${PORT} (env ${ENV})`));

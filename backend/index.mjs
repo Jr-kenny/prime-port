@@ -11,9 +11,11 @@
 // the watcher stays off and everything else runs normally.
 import { createServer, request } from "node:http";
 import { spawn, execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { restoreState, startBackupLoop } from "./state-sync.mjs";
+import { publicUpstream } from "./public-routing.mjs";
 
 // The public port: APP_PORT if set, else the host-assigned PORT (Render
 // injects one and routes traffic to it), else 7860 (Hugging Face style).
@@ -90,6 +92,13 @@ function restoreOnchainosSessionSecrets() {
 
 const hasOnchainosEmailSession = restoreOnchainosSessionSecrets();
 
+// The two internal services share this process in production. Generate
+// private credentials before importing either service so internal HTTP calls
+// are authenticated even when the deploy operator has not supplied secrets.
+process.env.PORT_SERVICE_TOKEN ??= randomBytes(32).toString("hex");
+process.env.SESSION_SECRET ??= randomBytes(32).toString("hex");
+process.env.BACKEND_SERVICE_TOKEN ??= randomBytes(32).toString("hex");
+
 // Each service reads process.env.PORT with its own fallback (8791 / 8792).
 // Clearing PORT before import lets both fall back and the proxy own APP_PORT.
 delete process.env.PORT;
@@ -101,21 +110,16 @@ await import("./distribution/poster.mjs");
 startBackupLoop();
 
 // Path prefix -> internal port. Everything the web app and agents touch:
-// /mcp + /jobs + /freelancers live on mcp-server, /ports + /attachments on
-// port-service. Unknown paths 404 here rather than leak internals.
-const upstream = (path) => {
-  if (path === "/mcp" || path === "/mcp/publish" || path.startsWith("/jobs") || path.startsWith("/freelancers") || path.startsWith("/evidence")) return 8792;
-  if (path.startsWith("/ports") || path.startsWith("/attachments")) return 8791;
-  return null;
-};
-
+// /ports is deliberately absent. Port control is service-to-service only.
+// Attachment downloads remain capability URLs containing an unguessable
+// content digest. Uploads go through the authenticated freelancer API.
 createServer((req, res) => {
   const path = new URL(req.url, "http://x").pathname;
   if (path === "/" || path === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(JSON.stringify({ ok: serviceReady(), service: "prime-port", components: runtimeStatus, memory: memoryStatus() }));
   }
-  const port = upstream(path);
+  const port = publicUpstream(path, req.method);
   if (!port) {
     res.writeHead(404, { "content-type": "application/json" });
     return res.end(JSON.stringify({ error: `no surface at ${path}` }));

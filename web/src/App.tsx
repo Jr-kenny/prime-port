@@ -88,7 +88,7 @@ export function App() {
 
   useEffect(() => {
     listJobs().then(setJobs).catch(() => setJobs([]));
-  }, [route.name]);
+  }, [route.name, session.status]);
 
   const claims = useMemo<ClaimView[]>(() => {
     if (!identity) return [];
@@ -96,7 +96,7 @@ export function App() {
       .filter((j) => j.claims.some((c) => c.inboxId === identity.inboxId))
       .map((j) => ({
         jobId: j.jobId,
-        portInboxId: j.port.inboxId,
+        portInboxId: j.port!.inboxId,
         claimedAt: j.claims.find((c) => c.inboxId === identity.inboxId)!.claimedAt,
       }))
       .sort((a, b) => b.claimedAt - a.claimedAt);

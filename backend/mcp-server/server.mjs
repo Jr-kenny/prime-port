@@ -13,7 +13,7 @@
 //     marketplace escrow calls hang off those same events; wiring them to
 //     onchainos is the next lane deliverable and marked MARKETPLACE below.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -39,6 +39,9 @@ import { startEscrowWatcher } from "./escrow-watcher.mjs";
 const PORT = Number(process.env.PORT ?? 8792);
 const PORT_SVC = process.env.PORT_SVC ?? "http://localhost:8791";
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL ?? "https://prime-port-latest.onrender.com";
+const PORT_SERVICE_TOKEN = process.env.PORT_SERVICE_TOKEN ?? randomBytes(32).toString("hex");
+const SESSION_SECRET = process.env.SESSION_SECRET ?? randomBytes(32).toString("hex");
+const BACKEND_SERVICE_TOKEN = process.env.BACKEND_SERVICE_TOKEN ?? randomBytes(32).toString("hex");
 const PAY_TO_ADDRESS = process.env.PAY_TO_ADDRESS ?? "0x7ab4daee18a449eb76a8a7d66cb02cf34a28563e";
 const PUBLISH_PRICE = process.env.PUBLISH_PRICE ?? "$1.00";
 const ESCROW = escrowConfig();
@@ -63,8 +66,16 @@ if (Object.values(jobs).some((job) => clearLegacyPublicationPrice(job, numericPu
 const emit = (type, payload) =>
   appendFileSync(`${DATA}events.jsonl`, JSON.stringify({ type, at: Date.now(), ...payload }) + "\n");
 
-const portSvc = async (method, path, body) => {
-  const r = await fetch(`${PORT_SVC}${path}`, { method, body: body ? JSON.stringify(body) : undefined });
+const portSvc = async (method, path, body, contentType = "application/json", extraHeaders = {}) => {
+  const r = await fetch(`${PORT_SVC}${path}`, {
+    method,
+    headers: {
+      authorization: `Bearer ${PORT_SERVICE_TOKEN}`,
+      ...(body !== undefined ? { "content-type": contentType } : {}),
+      ...extraHeaders,
+    },
+    body: body === undefined ? undefined : contentType === "application/json" ? JSON.stringify(body) : body,
+  });
   const j = await r.json();
   if (!r.ok) throw new Error(`port-service ${path}: ${j.error}`);
   return j;
@@ -75,6 +86,85 @@ const getJob = (jobId) => {
   if (!job) throw new Error(`unknown job ${jobId}`);
   return job;
 };
+const requireAgent = (job, session) => {
+  if (!session?.wallet || job.agent.wallet.toLowerCase() !== session.wallet) {
+    throw new Error("job agent authorization required");
+  }
+};
+
+const b64url = (value) => Buffer.from(value).toString("base64url");
+const signToken = (payload) => {
+  const encoded = b64url(JSON.stringify(payload));
+  const signature = createHmac("sha256", SESSION_SECRET).update(encoded).digest("base64url");
+  return `${encoded}.${signature}`;
+};
+const readToken = (token, expectedType) => {
+  const [encoded, supplied] = String(token ?? "").split(".");
+  if (!encoded || !supplied) throw new Error("authentication required");
+  const expected = createHmac("sha256", SESSION_SECRET).update(encoded).digest();
+  const actual = Buffer.from(supplied, "base64url");
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new Error("invalid session");
+  const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+  if (payload.type !== expectedType || !payload.exp || payload.exp < Date.now()) throw new Error("expired session");
+  return payload;
+};
+const bearer = (req) => String(req.headers.authorization ?? "").match(/^Bearer (.+)$/)?.[1];
+const requireSession = (req) => readToken(bearer(req), "freelancer-session");
+const optionalSession = (req) => {
+  try {
+    return requireSession(req);
+  } catch {
+    return null;
+  }
+};
+const requireBackend = (req) => {
+  if (req.headers["x-backend-service-token"] !== BACKEND_SERVICE_TOKEN) throw new Error("backend service authentication required");
+};
+const ownsJob = (job, session) => job.claims.some(
+  (claim) => claim.inboxId === session.inboxId && claim.wallet === session.wallet,
+);
+const hiredSession = (job, session) =>
+  hiredInboxId(job) === session.inboxId
+  && job.pendingHire?.commitment.freelancer.wallet.toLowerCase() === session.wallet;
+
+function publicJob(job, session) {
+  const ownClaims = session
+    ? job.claims.filter((claim) => claim.inboxId === session.inboxId && claim.wallet === session.wallet)
+    : [];
+  const hired = Boolean(session && hiredSession(job, session));
+  return {
+    jobId: job.jobId,
+    status: job.status,
+    title: job.title,
+    description: job.description,
+    deliverables: job.deliverables,
+    criteria: job.criteria,
+    price: job.price,
+    currency: job.currency,
+    deadline: job.deadline,
+    createdAt: job.createdAt,
+    claims: ownClaims,
+    ...(ownClaims.length ? { port: { inboxId: job.port.inboxId } } : {}),
+    ...(hired ? {
+      pendingHire: {
+        hash: job.pendingHire.hash,
+        commitment: job.pendingHire.commitment,
+        escrow: job.pendingHire.escrow ? {
+          version: job.pendingHire.escrow.version,
+          chainId: job.pendingHire.escrow.chainId,
+          escrowAddress: job.pendingHire.escrow.escrowAddress,
+          tokenAddress: job.pendingHire.escrow.tokenAddress,
+          authorizationHash: job.pendingHire.escrow.authorizationHash,
+          signThisExactly: job.pendingHire.escrow.signThisExactly,
+          amount: job.pendingHire.escrow.amount,
+          currency: job.pendingHire.escrow.currency,
+        } : undefined,
+      },
+      settlement: job.settlement,
+      submissions: job.submissions,
+    } : {}),
+  };
+}
 
 // Reconstruct the internal escrow ledger for pre-upgrade jobs without
 // pretending their wage is funded. A real EscrowFunded event is the only
@@ -121,7 +211,13 @@ const ensureSettlement = (job) => {
 };
 
 let migratedSettlement = false;
-for (const job of Object.values(jobs)) migratedSettlement = ensureSettlement(job) || migratedSettlement;
+for (const job of Object.values(jobs)) {
+  migratedSettlement = ensureSettlement(job) || migratedSettlement;
+  if (job.agentToken) {
+    delete job.agentToken;
+    migratedSettlement = true;
+  }
+}
 if (migratedSettlement) save();
 
 // The public x402 purchase pays the flat fee and opens the port. The later
@@ -470,13 +566,14 @@ async function publishJob(args) {
   return { jobId, port: { inboxId: port.inboxId } };
 }
 
-function buildServer() {
+function buildServer(agentSession) {
   const mcp = new McpServer({ name: "prime-port", version: "0.1.0" });
 
   mcp.tool(
     "publish",
-    "Publish a job for human freelancers. Mints a private port (XMTP endpoint) for this job and returns it. No funds move yet; escrow locks only at hire.",
+    "Internal marketplace bridge for publishing a job. Public agents must use the x402-protected /mcp/publish endpoint.",
     {
+      publishToken: z.string().describe("Internal marketplace bridge credential"),
       criteria: z.string().min(10).describe("Acceptance criteria, plain text. This exact text goes into the signed hire commitment."),
       description: z.string().min(30).describe("A concrete description of the human work. Generic instructions such as 'post a job' are rejected."),
       deliverables: z.string().min(10).describe("The files, output, or evidence the freelancer must provide."),
@@ -489,6 +586,10 @@ function buildServer() {
       marketplaceJobId: z.string().optional().describe("The OKX task id of the publish task you opened against our 'Job publishing' service. Without it the listing goes up, but port_connect, negotiate and hire stay locked: the publish fee pays for the port."),
     },
     async (args) => {
+      if (args.publishToken !== BACKEND_SERVICE_TOKEN) throw new Error("publish service authorization required");
+      if (agentSession?.wallet && args.agentWallet.toLowerCase() !== agentSession.wallet) {
+        throw new Error("published agent wallet must match the authenticated wallet");
+      }
       const { jobId, port } = await publishJob(args);
       return text({
         jobId,
@@ -504,13 +605,14 @@ function buildServer() {
     { jobId: z.string() },
     async ({ jobId }) => {
       const job = getJob(jobId);
+      requireAgent(job, agentSession);
       requirePaidPort(job, "port_connect");
       markKeyDelivered(job, "port_connect");
       return text({
         inboxId: job.port.inboxId,
         identity: job.port.address,
-        grantEndpoint: `${PORT_SVC}/ports/${jobId}/grant/sign`,
-        grantTokenHeader: { "x-grant-token": job.port.grantToken },
+        grantEndpoint: `${PUBLIC_BASE_URL}/jobs/${jobId}/agent-grant/sign`,
+        grantAuthorizationHeader: { authorization: `Bearer ${agentSession.token}` },
         sdk: "@xmtp/node-sdk@4.6.0, Client.create with a signer whose signMessage POSTs {message} to the grant endpoint",
       });
     },
@@ -522,6 +624,7 @@ function buildServer() {
     { jobId: z.string() },
     async ({ jobId }) => {
       const job = getJob(jobId);
+      requireAgent(job, agentSession);
       const { conversations } = await portSvc("GET", `/ports/${jobId}/conversations`);
       const offers = [];
       for (const claim of job.claims) {
@@ -558,6 +661,7 @@ function buildServer() {
     { jobId: z.string(), claimantInboxId: z.string(), message: z.string() },
     async ({ jobId, claimantInboxId, message }) => {
       const job = getJob(jobId);
+      requireAgent(job, agentSession);
       if (job.status !== "open") throw new Error(`job is ${job.status}, negotiation is over`);
       requirePaidPort(job, "negotiate");
       markKeyDelivered(job, "negotiate");
@@ -580,6 +684,7 @@ function buildServer() {
     },
     async ({ jobId, claimantInboxId, price, deadline, criteria }) => {
       const job = getJob(jobId);
+      requireAgent(job, agentSession);
       if (job.status !== "open") throw new Error(`job is ${job.status}`);
       requirePaidPort(job, "hire");
       requireEscrow(ESCROW);
@@ -623,6 +728,7 @@ function buildServer() {
     { jobId: z.string(), signature: z.string().regex(/^0x[0-9a-fA-F]+$/) },
     async ({ jobId, signature }) => {
       const job = getJob(jobId);
+      requireAgent(job, agentSession);
       if (job.status !== "hiring" || !job.pendingHire) throw new Error("no hire in progress");
       const valid = await verifyMessage({
         address: job.agent.wallet,
@@ -652,6 +758,7 @@ function buildServer() {
     },
     async ({ jobId, submissionId, decision, feedback }) => {
       const job = getJob(jobId);
+      requireAgent(job, agentSession);
       ensureSettlement(job);
       if (job.status !== "hired") throw new Error(`job is ${job.status}, review requires locked escrow`);
       const submission = job.submissions?.find((candidate) => candidate.submissionId === submissionId);
@@ -699,6 +806,7 @@ function buildServer() {
     { jobId: z.string(), note: z.string().optional().describe("A closing message relayed to the freelancer just before the port is scrapped, e.g. acknowledging the delivery") },
     async ({ jobId, note }) => {
       const job = getJob(jobId);
+      requireAgent(job, agentSession);
       ensureSettlement(job);
       if (job.status !== "delivered") throw new Error(`job is ${job.status}, no Prime Port revision has been accepted for release`);
       if (note) await portSvc("POST", `/ports/${jobId}/messages`, { peerInboxId: hiredInboxId(job), content: note });
@@ -722,6 +830,7 @@ function buildServer() {
     },
     async ({ jobId, reason }) => {
       const job = getJob(jobId);
+      requireAgent(job, agentSession);
       ensureSettlement(job);
       if (!["hired", "delivered", "delivery-rejected"].includes(job.status)) {
         throw new Error(`job is ${job.status}, only funded unsettled jobs can be disputed`);
@@ -746,6 +855,7 @@ function buildServer() {
     },
     async ({ jobId, stars, note }) => {
       const job = getJob(jobId);
+      requireAgent(job, agentSession);
       if (job.status !== "settled") throw new Error(`job is ${job.status}, rate after approve settles it`);
       if (job.review) throw new Error("already rated");
       const review = {
@@ -775,6 +885,7 @@ function buildServer() {
     { jobId: z.string(), signature: z.string().regex(/^0x[0-9a-fA-F]+$/) },
     async ({ jobId, signature }) => {
       const job = getJob(jobId);
+      requireAgent(job, agentSession);
       if (!job.pendingReview) throw new Error("no rating in progress");
       const valid = await verifyMessage({
         address: job.agent.wallet,
@@ -802,33 +913,27 @@ function buildServer() {
 
 // REST for the freelancer web app.
 const rest = {
-  "POST /jobs": async (body) => publishJob(publishShape.parse(body)),
-  "GET /jobs": async () =>
-    Object.values(jobs).filter((job) => !job.publishTask || job.publishTask.paidAt).map(({ port, pendingHire, pendingReview, ...pub }) => ({
-      ...pub,
-      port: { inboxId: port.inboxId },
-      pendingHire: pendingHire ? {
-        hash: pendingHire.hash,
-        commitment: pendingHire.commitment,
-        escrow: pendingHire.escrow ? {
-          version: pendingHire.escrow.version,
-          chainId: pendingHire.escrow.chainId,
-          escrowAddress: pendingHire.escrow.escrowAddress,
-          tokenAddress: pendingHire.escrow.tokenAddress,
-          authorizationHash: pendingHire.escrow.authorizationHash,
-          signThisExactly: pendingHire.escrow.signThisExactly,
-          amount: pendingHire.escrow.amount,
-          currency: pendingHire.escrow.currency,
-        } : undefined,
-      } : undefined,
-    })),
-  "POST /jobs/:jobId/claims": async (body, jobId) => {
+  "POST /jobs": async (body, _jobId, req) => {
+    requireBackend(req);
+    return publishJob(publishShape.parse(body));
+  },
+  "GET /jobs": async (_body, _jobId, req) => {
+    if (req.headers["x-backend-service-token"] === BACKEND_SERVICE_TOKEN) {
+      return Object.values(jobs).filter((job) => !job.publishTask || job.publishTask.paidAt);
+    }
+    const session = optionalSession(req);
+    return Object.values(jobs)
+      .filter((job) => !job.publishTask || job.publishTask.paidAt)
+      .map((job) => publicJob(job, session));
+  },
+  "POST /jobs/:jobId/claims": async (body, jobId, req) => {
+    const session = requireSession(req);
     const job = getJob(jobId);
     if (job.status !== "open") throw new Error(`job is ${job.status}`);
     const claim = {
-      inboxId: z.string().min(10).parse(body.inboxId),
-      wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).parse(body.wallet).toLowerCase(),
-      payoutAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/).parse(body.payoutAddress ?? body.wallet).toLowerCase(),
+      inboxId: session.inboxId,
+      wallet: session.wallet,
+      payoutAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/).parse(body.payoutAddress ?? session.wallet).toLowerCase(),
       name: z.string().max(60).parse(body.name),
       claimedAt: Date.now(),
     };
@@ -837,10 +942,19 @@ const rest = {
     save();
     return { claimed: true, portInboxId: job.port.inboxId, next: "DM the port inbox to negotiate" };
   },
-  "POST /jobs/:jobId/countersign": async (body, jobId) => {
+  "POST /jobs/:jobId/agent-grant/sign": async (body, jobId, req) => {
+    const job = getJob(jobId);
+    requireAgent(job, readToken(bearer(req), "agent-session"));
+    return portSvc("POST", `/ports/${jobId}/grant/sign`, { message: z.string().min(1).parse(body.message) }, "application/json", {
+      "x-grant-token": job.port.grantToken,
+    });
+  },
+  "POST /jobs/:jobId/countersign": async (body, jobId, req) => {
+    const session = requireSession(req);
     const job = getJob(jobId);
     if (job.status !== "awaiting-freelancer-signature") throw new Error(`job is ${job.status}`);
     const { commitment, hash } = job.pendingHire;
+    if (!hiredSession(job, session)) throw new Error("only the selected freelancer can countersign");
     const valid = await verifyMessage({
       address: commitment.freelancer.wallet,
       message: authorizationMessage(job.pendingHire.escrow.authorizationHash),
@@ -879,7 +993,8 @@ const rest = {
       waitingOn: "the buyer wallet to approve USD₮0 and fund PrimePortEscrow on X Layer",
     };
   },
-  "POST /jobs/:jobId/submissions": async (body, jobId) => {
+  "POST /jobs/:jobId/submissions": async (body, jobId, req) => {
+    const session = requireSession(req);
     const job = getJob(jobId);
     ensureSettlement(job);
     if (job.status !== "hired") throw new Error(`job is ${job.status}, submissions require locked escrow`);
@@ -887,8 +1002,8 @@ const rest = {
     if (job.settlement.reviewStatus === "awaiting-review") throw new Error("the previous submission is still awaiting review");
     if (job.settlement.reviewStatus === "final-delivery-ready") throw new Error("a final submission has already been accepted");
 
-    const freelancerInboxId = z.string().min(10).parse(body.freelancerInboxId);
-    if (freelancerInboxId !== hiredInboxId(job)) throw new Error("only the hired freelancer can submit this job");
+    const freelancerInboxId = session.inboxId;
+    if (!hiredSession(job, session)) throw new Error("only the hired freelancer can submit this job");
     const note = z.string().trim().max(4000).default("").parse(body.note ?? "");
     const channel = await portSvc("GET", `/ports/${jobId}/channel?peer=${encodeURIComponent(freelancerInboxId)}`);
     const attachments = channel.messages
@@ -925,27 +1040,28 @@ const rest = {
       next: "The buyer Agent can request changes or accept this exact revision for X Layer escrow release.",
     };
   },
-  "POST /jobs/:jobId/dispute": async (body, jobId) => {
+  "POST /jobs/:jobId/dispute": async (body, jobId, req) => {
+    const session = requireSession(req);
     const job = getJob(jobId);
     ensureSettlement(job);
     if (!["hired", "delivered", "delivery-rejected"].includes(job.status)) {
       throw new Error(`job is ${job.status}, only funded unsettled jobs can be disputed`);
     }
-    const freelancerInboxId = z.string().min(10).parse(body.freelancerInboxId);
-    if (freelancerInboxId !== hiredInboxId(job)) throw new Error("only the hired freelancer can dispute this job");
+    const freelancerInboxId = session.inboxId;
+    if (!hiredSession(job, session)) throw new Error("only the hired freelancer can dispute this job");
     const reason = z.string().trim().min(10).max(2000).parse(body.reason);
     const evidence = await buildDisputeEvidence(job, "provider", reason);
     emit("dispute-requested", { jobId, commitmentHash: job.pendingHire.hash, evidenceHash: evidence.evidenceHash, openedBy: "provider" });
     return evidence;
   },
-  "POST /jobs/:jobId/refund": async (body, jobId) => {
+  "POST /jobs/:jobId/refund": async (_body, jobId, req) => {
+    const session = requireSession(req);
     const job = getJob(jobId);
     ensureSettlement(job);
     if (!["hired", "delivered", "delivery-rejected"].includes(job.status)) {
       throw new Error(`job is ${job.status}, only funded unsettled jobs can be refunded`);
     }
-    const freelancerInboxId = z.string().min(10).parse(body.freelancerInboxId);
-    if (freelancerInboxId !== hiredInboxId(job)) throw new Error("only the hired freelancer can refund this job");
+    if (!hiredSession(job, session)) throw new Error("only the hired freelancer can refund this job");
     return { transaction: buildRefundRequest(job.pendingHire, ESCROW) };
   },
   "POST /jobs/:jobId/genlayer-submitted": async (body, jobId, req) => {
@@ -984,7 +1100,8 @@ const rest = {
     }
     return { paid: true };
   },
-  "POST /jobs/:jobId/posted": async (body, jobId) => {
+  "POST /jobs/:jobId/posted": async (body, jobId, req) => {
+    requireBackend(req);
     const job = getJob(jobId);
     const channel = z.enum(["telegram", "x"]).parse(body.channel);
     job.postedTo = { ...job.postedTo, [channel]: Date.now() };
@@ -1101,6 +1218,110 @@ function requirePublishPaymentWithJsonChallenge(req, res, next) {
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 
+const sessionMessage = ({ wallet, inboxId, challenge }) => [
+  "Prime Port freelancer session",
+  `Wallet: ${wallet}`,
+  `XMTP inbox: ${inboxId}`,
+  `Challenge: ${challenge}`,
+].join("\n");
+const agentMessage = ({ wallet, challenge }) => [
+  "Prime Port autonomous agent session",
+  `Wallet: ${wallet}`,
+  `Challenge: ${challenge}`,
+].join("\n");
+
+app.post("/auth/challenge", (req, res) => {
+  try {
+    const wallet = z.string().regex(/^0x[0-9a-fA-F]{40}$/).parse(req.body.wallet).toLowerCase();
+    const inboxId = z.string().min(10).max(200).parse(req.body.inboxId);
+    const challenge = signToken({
+      type: "freelancer-challenge",
+      wallet,
+      inboxId,
+      nonce: randomBytes(24).toString("hex"),
+      exp: Date.now() + 5 * 60 * 1000,
+    });
+    res.set("cache-control", "no-store").json({ challenge, message: sessionMessage({ wallet, inboxId, challenge }) });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/auth/session", async (req, res) => {
+  try {
+    const challenge = readToken(req.body.challenge, "freelancer-challenge");
+    const message = sessionMessage({ wallet: challenge.wallet, inboxId: challenge.inboxId, challenge: req.body.challenge });
+    const valid = await verifyMessage({ address: challenge.wallet, message, signature: req.body.signature });
+    if (!valid) return res.status(401).json({ error: "signature does not recover the session wallet" });
+    const expiresAt = Date.now() + 12 * 60 * 60 * 1000;
+    const token = signToken({
+      type: "freelancer-session",
+      wallet: challenge.wallet,
+      inboxId: challenge.inboxId,
+      exp: expiresAt,
+    });
+    res.set("cache-control", "no-store").json({ token, expiresAt });
+  } catch (error) {
+    res.status(401).json({ error: error.message });
+  }
+});
+
+app.post("/auth/agent-challenge", (req, res) => {
+  try {
+    const wallet = z.string().regex(/^0x[0-9a-fA-F]{40}$/).parse(req.body.wallet).toLowerCase();
+    const challenge = signToken({
+      type: "agent-challenge",
+      wallet,
+      nonce: randomBytes(24).toString("hex"),
+      exp: Date.now() + 5 * 60 * 1000,
+    });
+    res.set("cache-control", "no-store").json({ challenge, message: agentMessage({ wallet, challenge }) });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/auth/agent-session", async (req, res) => {
+  try {
+    const challenge = readToken(req.body.challenge, "agent-challenge");
+    const valid = await verifyMessage({
+      address: challenge.wallet,
+      message: agentMessage({ wallet: challenge.wallet, challenge: req.body.challenge }),
+      signature: req.body.signature,
+    });
+    if (!valid) return res.status(401).json({ error: "signature does not recover the agent wallet" });
+    const expiresAt = Date.now() + 12 * 60 * 60 * 1000;
+    const token = signToken({ type: "agent-session", wallet: challenge.wallet, exp: expiresAt });
+    res.set("cache-control", "no-store").json({ token, expiresAt, wallet: challenge.wallet });
+  } catch (error) {
+    res.status(401).json({ error: error.message });
+  }
+});
+
+app.post("/jobs/:jobId/attachments", async (req, res) => {
+  try {
+    const session = requireSession(req);
+    const job = getJob(req.params.jobId);
+    if (!ownsJob(job, session)) return res.status(403).json({ error: "only a claimant can upload to this port" });
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of req) {
+      size += chunk.length;
+      if (size > 50 * 1024 * 1024) return res.status(413).json({ error: "attachment exceeds 52428800 bytes" });
+      chunks.push(chunk);
+    }
+    const uploaded = await portSvc(
+      "POST",
+      `/ports/${encodeURIComponent(job.jobId)}/attachments`,
+      Buffer.concat(chunks),
+      "application/octet-stream",
+    );
+    res.json(uploaded);
+  } catch (error) {
+    res.status(/auth|session/i.test(error.message) ? 401 : 400).json({ error: error.message });
+  }
+});
+
 // The one paid operation. Discovery and every operation on an existing port
 // remain on /mcp without another charge. Reaching this handler means the OKX
 // middleware verified the payment authorization for this exact request.
@@ -1110,7 +1331,12 @@ app.get("/mcp/publish", requirePublishPaymentWithJsonChallenge, (_req, res) => {
 
 app.post("/mcp/publish", requirePublishPaymentWithJsonChallenge, async (req, res) => {
   try {
+    const token = bearer(req);
+    const agentSession = { ...readToken(token, "agent-session"), token };
     const args = paidPublishShape.parse(req.body);
+    if (args.agentWallet.toLowerCase() !== agentSession.wallet) {
+      return res.status(403).json({ error: "published agent wallet must match the authenticated wallet" });
+    }
     const paymentId = `x402-${randomUUID()}`;
     const { jobId, port } = await publishJob({ ...args, marketplaceJobId: paymentId });
     const job = jobs[jobId];
@@ -1131,11 +1357,19 @@ app.post("/mcp/publish", requirePublishPaymentWithJsonChallenge, async (req, res
 });
 
 app.all("/mcp", async (req, res) => {
-  // Stateless MCP: fresh server + transport per request.
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-  res.on("close", () => transport.close());
-  await buildServer().connect(transport);
-  return transport.handleRequest(req, res, req.body);
+  try {
+    const internal = req.headers["x-backend-service-token"] === BACKEND_SERVICE_TOKEN;
+    const token = bearer(req);
+    const agentSession = internal ? { internal: true } : { ...readToken(token, "agent-session"), token };
+    // Stateless MCP: fresh server + transport per request. Authentication is
+    // bound to the transport request, so tools never accept identity secrets.
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    res.on("close", () => transport.close());
+    await buildServer(agentSession).connect(transport);
+    return transport.handleRequest(req, res, req.body);
+  } catch (error) {
+    return res.status(401).json({ error: error.message });
+  }
 });
 
 app.get("/evidence/:evidenceHash", (req, res) => {
@@ -1178,7 +1412,12 @@ app.all("*path", async (req, res) => {
     res.json(await handler(body, m?.[2], req));
   } catch (e) {
     console.error(`[mcp-server] ${req.method} ${path}:`, e.message);
-    res.status(400).json({ error: e.message });
+    const status = /authentication required|invalid session|expired session/i.test(e.message)
+      ? 401
+      : /authorization required|only .* can/i.test(e.message)
+        ? 403
+        : 400;
+    res.status(status).json({ error: e.message });
   }
 });
 

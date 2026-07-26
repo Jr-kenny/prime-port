@@ -33,14 +33,26 @@ if (!existsSync(keyPath)) writeFileSync(keyPath, generatePrivateKey(), { mode: 0
 const agent = privateKeyToAccount(readFileSync(keyPath, "utf8").trim());
 
 const rest = async (method, path, body) => {
-  const r = await fetch(`${BACKEND}${path}`, { method, body: body ? JSON.stringify(body) : undefined });
+  const r = await fetch(`${BACKEND}${path}`, {
+    method,
+    headers: body ? { "content-type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
   const j = await r.json();
   if (!r.ok) throw new Error(`${path}: ${j.error}`);
   return j;
 };
 
+const challenge = await rest("POST", "/auth/agent-challenge", { wallet: agent.address });
+const authenticated = await rest("POST", "/auth/agent-session", {
+  challenge: challenge.challenge,
+  signature: await agent.signMessage({ message: challenge.message }),
+});
+
 const mcp = new McpClient({ name: "demo-agent", version: "0.0.1" });
-await mcp.connect(new StreamableHTTPClientTransport(new URL(`${BACKEND}/mcp`)));
+await mcp.connect(new StreamableHTTPClientTransport(new URL(`${BACKEND}/mcp`), {
+  requestInit: { headers: { authorization: `Bearer ${authenticated.token}` } },
+}));
 const call = async (name, args) => {
   const r = await mcp.callTool({ name, arguments: args });
   if (r.isError) throw new Error(`${name}: ${r.content[0].text}`);
@@ -55,6 +67,7 @@ try {
     if (!title || !criteria) throw new Error("usage: publish <title> <criteria> [price]  (omit price to list open to offers)");
     const mktId = `demo-pub-${Date.now()}`;
     const pub = await call("publish", {
+      publishToken: process.env.BACKEND_SERVICE_TOKEN,
       title,
       criteria,
       ...(price ? { price } : {}),
