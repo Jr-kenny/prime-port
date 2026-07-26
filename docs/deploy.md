@@ -32,6 +32,9 @@ submission.
 APP_PORT=7860
 PUBLIC_BASE_URL=https://mxm6w9ajeg.us-east-1.awsapprunner.com
 ATTACH_BASE=https://mxm6w9ajeg.us-east-1.awsapprunner.com
+PORT_SERVICE_TOKEN=<high-entropy-secret>
+BACKEND_SERVICE_TOKEN=<high-entropy-secret>
+SESSION_SECRET=<high-entropy-secret>
 
 EXPECTED_OKX_AGENT_ID=5982
 ENABLE_A2A_RESPONDER=0

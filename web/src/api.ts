@@ -12,8 +12,10 @@ export type PublicJob = {
   currency: string;
   deadline: number;
   agent?: { agentId: string; wallet: string };
+  // Anonymous listings receive an empty claims array and no port. A signed
+  // freelancer sees only their own claim and job-scoped private fields.
   claims: { inboxId: string; wallet: string; payoutAddress: string; name: string; claimedAt: number }[];
-  port: { inboxId: string };
+  port?: { inboxId: string };
   pendingHire?: {
     hash: string;
     // Mirrors the real commitment shape (docs/hire-commitment.md): the
@@ -76,10 +78,42 @@ export type FreelancerProfile = {
   reviewCount: number;
 };
 
+let authToken: string | null = null;
+export const getAuthToken = () => authToken;
+export const clearAuthToken = () => {
+  authToken = null;
+};
+
+export async function authenticateFreelancer(
+  wallet: string,
+  inboxId: string,
+  signMessage: (message: string) => Promise<string>,
+): Promise<void> {
+  const challengeResponse = await fetch("/api/auth/challenge", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ wallet, inboxId }),
+  });
+  const challenge = await challengeResponse.json();
+  if (!challengeResponse.ok) throw new Error(challenge.error ?? "session challenge failed");
+  const signature = await signMessage(challenge.message);
+  const sessionResponse = await fetch("/api/auth/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ challenge: challenge.challenge, signature }),
+  });
+  const session = await sessionResponse.json();
+  if (!sessionResponse.ok) throw new Error(session.error ?? "session authentication failed");
+  authToken = session.token;
+}
+
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await fetch(`/api${path}`, {
     method,
-    headers: body ? { "content-type": "application/json" } : undefined,
+    headers: {
+      ...(body ? { "content-type": "application/json" } : {}),
+      ...(authToken ? { authorization: `Bearer ${authToken}` } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   const j = await r.json();
@@ -90,7 +124,7 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
 export const listJobs = () =>
   api<PublicJob[]>("GET", "/jobs").then((jobs) => jobs.filter((job) => !job.publishTask || Boolean(job.publishTask.paidAt)));
 export const claimJob = (jobId: string, claim: { inboxId: string; wallet: string; payoutAddress?: string; name: string }) =>
-  api<{ claimed: boolean; portInboxId: string }>("POST", `/jobs/${jobId}/claims`, claim);
+  api<{ claimed: boolean; portInboxId: string }>("POST", `/jobs/${jobId}/claims`, { payoutAddress: claim.payoutAddress, name: claim.name });
 export type EscrowFundingRequest = {
   version: 1;
   network: string;
@@ -113,7 +147,6 @@ export const countersignHire = (jobId: string, signature: string) =>
   }>("POST", `/jobs/${jobId}/countersign`, { signature });
 export const submitForReview = (jobId: string, freelancerInboxId: string, note: string) =>
   api<{ submitted: boolean; submission: NonNullable<PublicJob["submissions"]>[number] }>("POST", `/jobs/${jobId}/submissions`, {
-    freelancerInboxId,
     note,
   });
 export const getProfile = (inboxId: string) => api<FreelancerProfile>("GET", `/freelancers/${inboxId}/profile`);
@@ -131,8 +164,8 @@ export const openDispute = (jobId: string, freelancerInboxId: string, reason: st
   api<{ evidenceHash: string; evidenceUrl: string; transaction: WalletTransaction }>(
     "POST",
     `/jobs/${jobId}/dispute`,
-    { freelancerInboxId, reason },
+    { reason },
   );
 
 export const refundBuyer = (jobId: string, freelancerInboxId: string) =>
-  api<{ transaction: WalletTransaction }>("POST", `/jobs/${jobId}/refund`, { freelancerInboxId });
+  api<{ transaction: WalletTransaction }>("POST", `/jobs/${jobId}/refund`, {});

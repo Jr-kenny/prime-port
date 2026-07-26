@@ -11,6 +11,7 @@ import type { GroupUpdated } from "@xmtp/content-type-group-updated";
 import type { Attachment, RemoteAttachment } from "@xmtp/content-type-remote-attachment";
 import { toBytes } from "viem";
 import { attachmentCodecs } from "./attachments";
+import { authenticateFreelancer, clearAuthToken } from "./api";
 import type { WalletTransaction } from "./api";
 
 // The client's content types once the evidence codecs are registered.
@@ -30,7 +31,7 @@ export type Session = {
   // set up. ready: identity usable for claims, chat and countersigning.
   status: "loading" | "signed-out" | "connecting" | "ready" | "error";
   // While connecting: which arrow of the chain we're waiting on.
-  stage?: "wallet" | "inbox";
+  stage?: "wallet" | "inbox" | "session";
   error?: string;
   identity: Identity | null;
   xmtp: XmtpClient | null;
@@ -116,6 +117,7 @@ export function useIdentity(): Session {
   const { createWallet } = useCreateWallet();
   const creatingWallet = useRef(false);
   const [xmtp, setXmtp] = useState<XmtpClient | null>(null);
+  const [apiAuthenticated, setApiAuthenticated] = useState(false);
   const [error, setError] = useState<string>();
   const [payoutOverride, setPayoutOverride] = useState<string | null>(null);
 
@@ -151,9 +153,22 @@ export function useIdentity(): Session {
     };
   }, [ready, authenticated, walletAddr]);
 
+  useEffect(() => {
+    if (!embedded || !walletAddr || !xmtp?.inboxId) return;
+    let stale = false;
+    setApiAuthenticated(false);
+    authenticateFreelancer(walletAddr, xmtp.inboxId, (message) => personalSign(embedded, message)).then(
+      () => !stale && setApiAuthenticated(true),
+      (e) => !stale && setError(e instanceof Error ? e.message : String(e)),
+    );
+    return () => {
+      stale = true;
+    };
+  }, [walletAddr, xmtp?.inboxId]);
+
   const email = user?.email?.address ?? user?.google?.email ?? "";
   const identity: Identity | null =
-    authenticated && embedded && xmtp?.inboxId
+    authenticated && embedded && xmtp?.inboxId && apiAuthenticated
       ? {
           name: user?.google?.name ?? (email ? email.split("@")[0] : "Freelancer"),
           email,
@@ -166,7 +181,7 @@ export function useIdentity(): Session {
 
   return {
     status: !ready ? "loading" : !authenticated ? "signed-out" : error ? "error" : identity ? "ready" : "connecting",
-    stage: !embedded ? "wallet" : "inbox",
+    stage: !embedded ? "wallet" : !xmtp ? "inbox" : "session",
     error,
     identity,
     xmtp,
@@ -184,8 +199,10 @@ export function useIdentity(): Session {
       setPayoutOverride(address.toLowerCase());
     },
     signOut: async () => {
+      clearAuthToken();
       await logout();
       setXmtp(null);
+      setApiAuthenticated(false);
       setError(undefined);
     },
   };

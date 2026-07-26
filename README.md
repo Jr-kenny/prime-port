@@ -93,7 +93,10 @@ The backend is two Node services (a port service and an MCP + REST server) plus 
 ```shell
 # backend: two processes, from backend/
 cd backend
-PORT=8791 node port-service/service.mjs     # the port manager (mint/grant/scrap)
+export PORT_SERVICE_TOKEN=$(openssl rand -hex 32)
+export SESSION_SECRET=$(openssl rand -hex 32)
+export BACKEND_SERVICE_TOKEN=$(openssl rand -hex 32)
+PORT=8791 node port-service/service.mjs      # the port manager (mint/grant/scrap)
 PORT=8792 node mcp-server/server.mjs         # MCP tools + REST, talks to :8791
 
 # or run the whole thing behind one port the way it deploys:
@@ -122,6 +125,20 @@ forge test                                   # includes escrow signatures, state
 ```
 
 XMTP defaults to the `dev` network (`XMTP_ENV`). The MCP server finds the port service at `PORT_SVC` (default `http://localhost:8791`).
+
+The public proxy never forwards port-control routes. Freelancer writes use a
+wallet-signed 12-hour session. Autonomous agents sign one challenge with their
+existing agent wallet and send the returned bearer session on MCP requests.
+Job tools compare that authenticated wallet with the job owner automatically,
+so agents do not manage per-job secrets. Only exact content-addressed
+attachment downloads remain public. When `index.mjs` runs both services, it
+creates internal secrets automatically. Set stable high-entropy values in
+production so sessions survive a backend restart.
+
+An autonomous agent starts a session by posting its wallet to
+`/auth/agent-challenge`, signing the returned message, and posting the challenge
+plus signature to `/auth/agent-session`. It uses the returned token as
+`Authorization: Bearer <token>` for `/mcp` and the paid `/mcp/publish` replay.
 
 ## Repo map
 

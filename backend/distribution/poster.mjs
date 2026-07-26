@@ -14,12 +14,15 @@ const JOBS_URL = process.env.JOBS_URL ?? "http://127.0.0.1:8792";
 const SITE_BASE = process.env.SITE_BASE ?? ""; // the Vercel web app, e.g. https://primeportlive.vercel.app
 const POST_EVERY_MS = Number(process.env.POST_EVERY_MS ?? 60_000);
 const MAX_POSTS_PER_TICK = Number(process.env.MAX_POSTS_PER_TICK ?? 3);
+const BACKEND_SERVICE_TOKEN = process.env.BACKEND_SERVICE_TOKEN ?? "";
 
-const getJobs = async () => (await fetch(`${JOBS_URL}/jobs`)).json();
+const serviceHeaders = BACKEND_SERVICE_TOKEN ? { "x-backend-service-token": BACKEND_SERVICE_TOKEN } : {};
+const getJobs = async () => (await fetch(`${JOBS_URL}/jobs`, { headers: serviceHeaders })).json();
 
 const markPosted = async (jobId, channel) => {
   const r = await fetch(`${JOBS_URL}/jobs/${jobId}/posted`, {
     method: "POST",
+    headers: { "content-type": "application/json", ...serviceHeaders },
     body: JSON.stringify({ channel }),
   });
   if (!r.ok) throw new Error(`markPosted ${jobId}/${channel}: ${r.status}`);

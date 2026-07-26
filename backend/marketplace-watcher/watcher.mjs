@@ -44,11 +44,16 @@ const AUTO_ENGAGE = (process.env.AUTO_ENGAGE ?? "true") !== "false";
 // marketplace deliverable.
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:7860";
 const WATCHER_TOKEN = process.env.WATCHER_TOKEN ?? "";
+const BACKEND_SERVICE_TOKEN = process.env.BACKEND_SERVICE_TOKEN ?? "";
 
 const backendPost = async (path, body) => {
   const r = await fetch(`${BACKEND_URL}${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...(WATCHER_TOKEN ? { "x-watcher-token": WATCHER_TOKEN } : {}) },
+    headers: {
+      "content-type": "application/json",
+      ...(WATCHER_TOKEN ? { "x-watcher-token": WATCHER_TOKEN } : {}),
+      ...(BACKEND_SERVICE_TOKEN ? { "x-backend-service-token": BACKEND_SERVICE_TOKEN } : {}),
+    },
     body: JSON.stringify(body),
   });
   const j = await r.json();
@@ -263,7 +268,9 @@ async function pollOnce() {
   // this cycle rather than failing the poll.
   let boardJobs = [];
   try {
-    boardJobs = await (await fetch(`${BACKEND_URL}/jobs`)).json();
+    boardJobs = await (await fetch(`${BACKEND_URL}/jobs`, {
+      headers: BACKEND_SERVICE_TOKEN ? { "x-backend-service-token": BACKEND_SERVICE_TOKEN } : {},
+    })).json();
   } catch (e) {
     emit("mkt-board-unreachable", { error: e.message });
     console.error(`[watcher] board unreachable: ${e.message}`);

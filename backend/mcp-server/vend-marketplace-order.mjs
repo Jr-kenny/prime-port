@@ -8,13 +8,17 @@ if (!mktJobId || !title || !agentId || !agentWallet || !price) {
   console.error("usage: node vend-marketplace-order.mjs <marketplaceJobId> <title> <clientAgentId> <clientWallet> <price>");
   process.exit(1);
 }
+if (!process.env.BACKEND_SERVICE_TOKEN) throw new Error("BACKEND_SERVICE_TOKEN is required");
 
 const mcp = new McpClient({ name: "marketplace-vend", version: "0.0.1" });
-await mcp.connect(new StreamableHTTPClientTransport(new URL("http://localhost:8792/mcp")));
+await mcp.connect(new StreamableHTTPClientTransport(new URL("http://localhost:8792/mcp"), {
+  requestInit: { headers: { "x-backend-service-token": process.env.BACKEND_SERVICE_TOKEN } },
+}));
 
 const r = await mcp.callTool({
   name: "publish",
   arguments: {
+    publishToken: process.env.BACKEND_SERVICE_TOKEN,
     title,
     criteria: title, // the task description is the spec; the client wrote this much
     price,
