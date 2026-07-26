@@ -28,7 +28,7 @@ RUN curl -fsSL -o /usr/local/bin/onchainos \
 # OKX A2A receives marketplace conversations over XMTP. Hermes is its
 # server-side responder and uses the configured Hermes inference provider.
 ARG HERMES_VERSION=v2026.7.7.2
-ARG OKX_A2A_VERSION=0.1.9
+ARG OKX_A2A_VERSION=0.1.10
 RUN npm install -g @okxweb3/a2a-node@${OKX_A2A_VERSION} \
  && python3 -m venv /opt/hermes \
  && /opt/hermes/bin/pip install --no-cache-dir \
