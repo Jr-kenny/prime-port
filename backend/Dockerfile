@@ -64,7 +64,7 @@ COPY distribution/poster.mjs distribution/select.mjs distribution/
 COPY distribution/channels/oauth1.mjs distribution/channels/telegram.mjs distribution/channels/x.mjs distribution/channels/
 COPY marketplace-watcher/watcher.mjs marketplace-watcher/wage-release.mjs marketplace-watcher/task-routing.mjs marketplace-watcher/
 COPY payout/register-at-hire.mjs payout/
-COPY index.mjs state-sync.mjs listing-price.mjs brief-policy.mjs settlement-routing.mjs ./
+COPY index.mjs public-routing.mjs state-sync.mjs listing-price.mjs brief-policy.mjs settlement-routing.mjs ./
 
 # Spaces runs the container unprivileged; everything the process writes
 # (data dirs, state mirror) lives under /app, so hand it to the node user.
