@@ -84,7 +84,13 @@ function restoreOnchainosSessionSecrets() {
   mkdirSync(onchainosHome, { recursive: true });
   ONCHAINOS_SESSION_FILES.forEach((name, index) => {
     const encoded = encodedSources[index].trim();
-    writeFileSync(`${onchainosHome}/${name}`, Buffer.from(encoded, "base64"), { mode: 0o600 });
+    // wallets.json can exceed SSM's 8 KiB limit after base64 expansion. The
+    // managed value may therefore be stored as raw JSON while older bundles
+    // and the other binary-safe values remain base64 encoded.
+    const contents = name === "wallets.json" && encoded.startsWith("{")
+      ? Buffer.from(encoded, "utf8")
+      : Buffer.from(encoded, "base64");
+    writeFileSync(`${onchainosHome}/${name}`, contents, { mode: 0o600 });
   });
   console.log("[prime-port] restored encrypted OnchainOS email session from managed secrets");
   return true;
@@ -141,24 +147,20 @@ createServer((req, res) => {
 let okxLoginPromise;
 function ensureOkxLogin() {
   if (!okxLoginPromise) {
-    const command = (async () => {
-      if (hasOnchainosEmailSession) {
-        const { stdout } = await promisify(execFile)("onchainos", ["wallet", "status"], { timeout: 120_000 });
+    const command = hasOnchainosEmailSession
+      ? promisify(execFile)("onchainos", ["wallet", "status"], { timeout: 120_000 }).then(({ stdout }) => {
         const status = JSON.parse(stdout);
-        if (status?.ok && status?.data?.loggedIn) {
-          const expectedEmail = process.env.EXPECTED_OKX_EMAIL?.trim().toLowerCase();
-          const actualEmail = status.data.email?.trim().toLowerCase();
-          if (expectedEmail && actualEmail !== expectedEmail) {
-            throw new Error(`restored OnchainOS session belongs to ${actualEmail || "an unknown account"}, expected ${expectedEmail}`);
-          }
-          console.log(`[prime-port] onchainos email session ready (${status.data.email || "email account"})`);
-          return;
+        if (!status?.ok || !status?.data?.loggedIn) {
+          throw new Error("restored OnchainOS email session is not logged in; refresh the managed session bundle from an authenticated operator session");
         }
-        console.warn("[prime-port] restored OnchainOS email session expired, using configured API credentials");
-      }
-      await promisify(execFile)("onchainos", ["wallet", "login", "--force"], { timeout: 120_000 });
-      console.log("[prime-port] onchainos wallet login ok (AK)");
-    })();
+        const expectedEmail = process.env.EXPECTED_OKX_EMAIL?.trim().toLowerCase();
+        const actualEmail = status.data.email?.trim().toLowerCase();
+        if (expectedEmail && actualEmail !== expectedEmail) {
+          throw new Error(`restored OnchainOS session belongs to ${actualEmail || "an unknown account"}, expected ${expectedEmail}`);
+        }
+        console.log(`[prime-port] onchainos email session ready (${status.data.email || "email account"})`);
+      })
+      : Promise.reject(new Error("OnchainOS social-login session bundle is missing"));
     okxLoginPromise = command
       .catch((error) => {
         okxLoginPromise = undefined;
