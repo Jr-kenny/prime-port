@@ -141,21 +141,24 @@ createServer((req, res) => {
 let okxLoginPromise;
 function ensureOkxLogin() {
   if (!okxLoginPromise) {
-    const command = hasOnchainosEmailSession
-      ? promisify(execFile)("onchainos", ["wallet", "status"], { timeout: 120_000 }).then(({ stdout }) => {
+    const command = (async () => {
+      if (hasOnchainosEmailSession) {
+        const { stdout } = await promisify(execFile)("onchainos", ["wallet", "status"], { timeout: 120_000 });
         const status = JSON.parse(stdout);
-        if (!status?.ok || !status?.data?.loggedIn) {
-          throw new Error("restored OnchainOS email session is not logged in");
+        if (status?.ok && status?.data?.loggedIn) {
+          const expectedEmail = process.env.EXPECTED_OKX_EMAIL?.trim().toLowerCase();
+          const actualEmail = status.data.email?.trim().toLowerCase();
+          if (expectedEmail && actualEmail !== expectedEmail) {
+            throw new Error(`restored OnchainOS session belongs to ${actualEmail || "an unknown account"}, expected ${expectedEmail}`);
+          }
+          console.log(`[prime-port] onchainos email session ready (${status.data.email || "email account"})`);
+          return;
         }
-        const expectedEmail = process.env.EXPECTED_OKX_EMAIL?.trim().toLowerCase();
-        const actualEmail = status.data.email?.trim().toLowerCase();
-        if (expectedEmail && actualEmail !== expectedEmail) {
-          throw new Error(`restored OnchainOS session belongs to ${actualEmail || "an unknown account"}, expected ${expectedEmail}`);
-        }
-        console.log(`[prime-port] onchainos email session ready (${status.data.email || "email account"})`);
-      })
-      : promisify(execFile)("onchainos", ["wallet", "login", "--force"], { timeout: 120_000 })
-        .then(() => console.log("[prime-port] onchainos wallet login ok (AK)"));
+        console.warn("[prime-port] restored OnchainOS email session expired, using configured API credentials");
+      }
+      await promisify(execFile)("onchainos", ["wallet", "login", "--force"], { timeout: 120_000 });
+      console.log("[prime-port] onchainos wallet login ok (AK)");
+    })();
     okxLoginPromise = command
       .catch((error) => {
         okxLoginPromise = undefined;
@@ -326,7 +329,7 @@ async function startA2AResponder() {
     runtimeStatus.a2aResponder = "starting";
     await ensureOkxLogin();
     const agentId = await assertAgentVisible(process.env.EXPECTED_OKX_AGENT_ID ?? "5982", env);
-    await promisify(execFile)("onchainos", ["preflight", "--skill-version", "4.3.0"], { env, timeout: 180_000 });
+    await promisify(execFile)("onchainos", ["preflight", "--skill-version", "4.4.1"], { env, timeout: 180_000 });
     await promisify(execFile)("hermes", ["version"], { env, timeout: 30_000 });
     await promisify(execFile)(
       "okx-a2a",
