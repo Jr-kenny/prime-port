@@ -260,7 +260,7 @@ function scheduleA2ARecycle(env, recycleMs) {
       scheduleA2ARecycle(env, recycleMs);
     } catch (error) {
       runtimeStatus.a2aResponder = "retrying-setup";
-      console.error(`[prime-port] cloud A2A recycle failed, repairing in 60s: ${error.message.split("\n")[0]}`);
+      console.error(`[prime-port] cloud A2A recycle failed, repairing in 60s: ${error.message}`);
       setTimeout(startA2AResponder, 60_000).unref();
     }
   }, recycleMs);
@@ -371,13 +371,16 @@ async function startA2AResponder() {
     console.log(`[prime-port] cloud Hermes/${hermesProvider} A2A responder configured for #${agentId} (${hermesModel})`);
   } catch (error) {
     runtimeStatus.a2aResponder = "retrying-setup";
-    console.error(`[prime-port] cloud A2A setup failed, retrying in 60s: ${error.message.split("\n")[0]}`);
+    console.error(`[prime-port] cloud A2A setup failed, retrying in 60s: ${error.message}`);
     setTimeout(startA2AResponder, 60_000);
     return;
   }
 
   runtimeStatus.a2aResponder = "running";
-  const configuredRecycleMs = Number(process.env.A2A_RECYCLE_MS ?? 4 * 60 * 60 * 1000);
+  // App Runner already supervises the container. Recycling only the nested
+  // daemon left Hermes unavailable after four hours, so keep it stable unless
+  // an operator explicitly opts into a tested recycle interval.
+  const configuredRecycleMs = Number(process.env.A2A_RECYCLE_MS ?? 0);
   const recycleMs = Number.isFinite(configuredRecycleMs) && configuredRecycleMs > 0 ? configuredRecycleMs : 0;
   if (recycleMs > 0) scheduleA2ARecycle(env, recycleMs);
 }

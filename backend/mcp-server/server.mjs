@@ -35,6 +35,11 @@ import {
   requireEscrow,
 } from "./escrow.mjs";
 import { startEscrowWatcher } from "./escrow-watcher.mjs";
+import {
+  paymentPayloadKey,
+  paymentPayerFromHeader,
+  paymentSignatureHeader,
+} from "./x402-request.mjs";
 
 const PORT = Number(process.env.PORT ?? 8792);
 const PORT_SVC = process.env.PORT_SVC ?? "http://localhost:8791";
@@ -528,10 +533,10 @@ const publishShape = z.object({
 });
 const paidPublishShape = publishShape.omit({ marketplaceJobId: true });
 
-async function publishJob(args) {
+async function prepareJob(args) {
   const jobId = `job-${Date.now()}-${randomUUID().slice(0, 8)}`;
   const port = await portSvc("POST", "/ports", { jobId });
-  jobs[jobId] = {
+  const job = {
     jobId,
     status: "open",
     title: args.title,
@@ -561,9 +566,32 @@ async function publishJob(args) {
       : {}),
     createdAt: Date.now(),
   };
+  return { jobId, job, port: { inboxId: port.inboxId } };
+}
+
+function commitPreparedJob(prepared) {
+  const { jobId, job, port } = prepared;
+  if (jobs[jobId] && jobs[jobId] !== job) throw new Error(`job ${jobId} already exists`);
+  jobs[jobId] ??= job;
   save();
-  emit("job-created", { jobId, title: args.title, price: args.price ?? null, deadline: args.deadline, marketplaceJobId: args.marketplaceJobId });
-  return { jobId, port: { inboxId: port.inboxId } };
+  emit("job-created", {
+    jobId,
+    title: job.title,
+    price: job.price,
+    deadline: job.deadline,
+    marketplaceJobId: job.marketplaceJobId,
+  });
+  return { jobId, port };
+}
+
+function stagePreparedJob(prepared) {
+  if (jobs[prepared.jobId]) throw new Error(`job ${prepared.jobId} already exists`);
+  jobs[prepared.jobId] = prepared.job;
+  save();
+}
+
+async function publishJob(args) {
+  return commitPreparedJob(await prepareJob(args));
 }
 
 function buildServer(agentSession) {
@@ -1118,9 +1146,30 @@ const okxFacilitator = new OKXFacilitatorClient({
   baseUrl: process.env.OKX_BASE_URL ?? "https://web3.okx.com",
   syncSettle: true,
 });
+const testSettlementEnabled = process.env.NODE_ENV === "test" && process.env.X402_TEST_SETTLEMENT === "1";
+const testFacilitator = {
+  getSupported: async () => ({
+    kinds: [{ x402Version: 2, scheme: "exact", network: "eip155:196" }],
+    extensions: [],
+    signers: {},
+  }),
+  verify: async (payload) => ({
+    isValid: true,
+    payer: payload?.payload?.authorization?.from,
+  }),
+  settle: async (payload, requirements) => ({
+    success: true,
+    status: "success",
+    transaction: `0x${"ab".repeat(32)}`,
+    network: requirements.network,
+    payer: payload?.payload?.authorization?.from,
+  }),
+};
 // This mode is only for local unpaid-challenge tests. Payment verification and
 // settlement still go to OKX and therefore still require real credentials.
-const facilitator = process.env.X402_OFFLINE_CHALLENGE === "1"
+const facilitator = testSettlementEnabled
+  ? testFacilitator
+  : process.env.X402_OFFLINE_CHALLENGE === "1"
   ? {
       getSupported: async () => ({
         kinds: [{ x402Version: 2, scheme: "exact", network: "eip155:196" }],
@@ -1133,6 +1182,49 @@ const facilitator = process.env.X402_OFFLINE_CHALLENGE === "1"
   : okxFacilitator;
 const paymentServer = new x402ResourceServer(facilitator)
   .register("eip155:196", new ExactEvmScheme());
+const pendingPaidPublishes = new Map();
+
+paymentServer.onAfterSettle(async ({ paymentPayload, requirements, result }) => {
+  const key = paymentPayloadKey(paymentPayload);
+  const pending = pendingPaidPublishes.get(key);
+  if (!pending) return;
+  try {
+    pending.job.publishTask.paidAt = Date.now();
+    pending.job.publishTask.settlement = {
+      amount: requirements.amount,
+      asset: requirements.asset,
+      network: result.network ?? requirements.network,
+      payer: result.payer ?? pending.payer,
+      status: result.status ?? "success",
+      transaction: result.transaction ?? null,
+    };
+    commitPreparedJob(pending);
+    emit("publish-task-paid", {
+      jobId: pending.jobId,
+      marketplaceJobId: pending.job.marketplaceJobId,
+      paymentMode: "x402",
+      transaction: result.transaction ?? null,
+    });
+    pendingPaidPublishes.delete(key);
+  } catch (error) {
+    console.error(`[mcp-server] CRITICAL: payment settled but job commit failed for ${pending.jobId}: ${error.message}`);
+  }
+});
+
+paymentServer.onSettleFailure(async ({ paymentPayload, error }) => {
+  const key = paymentPayloadKey(paymentPayload);
+  const pending = pendingPaidPublishes.get(key);
+  if (!pending) return;
+  pendingPaidPublishes.delete(key);
+  delete jobs[pending.jobId];
+  save();
+  try {
+    await portSvc("POST", `/ports/${encodeURIComponent(pending.jobId)}/scrap`, {});
+  } catch (cleanupError) {
+    console.error(`[mcp-server] failed to scrap unpaid port ${pending.jobId}: ${cleanupError.message}`);
+  }
+  console.error(`[mcp-server] x402 settlement failed for ${pending.jobId}: ${error.message}`);
+});
 const paidPublishInputSchema = {
   type: "object",
   properties: {
@@ -1162,6 +1254,25 @@ const paidPublishOutputSchema = {
     agentWallet: { carrier: "body", required: true, type: "string" },
   },
 };
+const requiredPaidPublishFields = Object.entries(paidPublishOutputSchema.input)
+  .filter(([, field]) => field.required)
+  .map(([name, field]) => ({ name, type: field.type, description: `Required ${name} field` }));
+
+function requirePublishInputBeforeSignedReplay(req, res, next) {
+  if (!paymentSignatureHeader(req)) return next();
+  const parsed = paidPublishShape.safeParse(req.body);
+  if (!parsed.success) {
+    const requiredArgs = [...new Set(parsed.error.issues.map((issue) => String(issue.path[0] ?? "body")))];
+    return res.status(400).json({
+      status: "input_required",
+      error: "Complete the required publication fields before authorizing payment.",
+      requiredArgs,
+      fields: requiredPaidPublishFields,
+    });
+  }
+  req.paidPublishArgs = parsed.data;
+  return next();
+}
 const publishPaymentRequirements = {
   accepts: [{
     scheme: "exact",
@@ -1329,24 +1440,30 @@ app.get("/mcp/publish", requirePublishPaymentWithJsonChallenge, (_req, res) => {
   res.status(405).json({ error: "Use POST with the complete job fields to publish." });
 });
 
-app.post("/mcp/publish", requirePublishPaymentWithJsonChallenge, async (req, res) => {
+app.post(
+  "/mcp/publish",
+  requirePublishInputBeforeSignedReplay,
+  requirePublishPaymentWithJsonChallenge,
+  async (req, res) => {
   try {
-    const token = bearer(req);
-    const agentSession = { ...readToken(token, "agent-session"), token };
-    const args = paidPublishShape.parse(req.body);
-    if (args.agentWallet.toLowerCase() !== agentSession.wallet) {
-      return res.status(403).json({ error: "published agent wallet must match the authenticated wallet" });
+    const { payer, paymentPayload } = paymentPayerFromHeader(paymentSignatureHeader(req));
+    const args = req.paidPublishArgs ?? paidPublishShape.parse(req.body);
+    if (args.agentWallet.toLowerCase() !== payer) {
+      return res.status(403).json({ error: "published agent wallet must match the verified x402 payer" });
+    }
+    const key = paymentPayloadKey(paymentPayload);
+    if (pendingPaidPublishes.has(key)) {
+      return res.status(409).json({ error: "x402 payment replay is already being processed" });
     }
     const paymentId = `x402-${randomUUID()}`;
-    const { jobId, port } = await publishJob({ ...args, marketplaceJobId: paymentId });
-    const job = jobs[jobId];
-    job.publishTask.paymentMode = "x402";
-    job.publishTask.paidAt = Date.now();
-    save();
-    emit("publish-task-paid", { jobId, marketplaceJobId: paymentId, paymentMode: "x402" });
+    const pending = await prepareJob({ ...args, marketplaceJobId: paymentId });
+    pending.job.publishTask.paymentMode = "x402";
+    pending.payer = payer;
+    stagePreparedJob(pending);
+    pendingPaidPublishes.set(key, pending);
     res.json({
-      jobId,
-      port,
+      jobId: pending.jobId,
+      port: pending.port,
       status: "waiting-for-freelancers",
       mcpEndpoint: `${PUBLIC_BASE_URL}/mcp`,
       next: "Connect to the port, monitor get_offers, and negotiate directly with freelancers. Publication does not guarantee that a freelancer will claim the job.",
