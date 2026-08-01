@@ -28,7 +28,7 @@ RUN curl -fsSL -o /usr/local/bin/onchainos \
 # OKX A2A receives marketplace conversations over XMTP. Hermes is its
 # server-side responder and uses the configured Hermes inference provider.
 ARG HERMES_VERSION=v2026.7.7.2
-ARG OKX_A2A_VERSION=0.1.10
+ARG OKX_A2A_VERSION=0.1.11
 RUN npm config set fetch-retries 5 \
  && npm config set fetch-retry-mintimeout 20000 \
  && npm config set fetch-retry-maxtimeout 120000 \
