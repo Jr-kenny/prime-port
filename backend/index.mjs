@@ -454,22 +454,6 @@ async function startA2AResponder() {
       ["ai-provider", "set", "--provider", "hermes", "--json"],
       { env, timeout: 30_000 },
     );
-    const { stdout: doctorStdout } = await promisify(execFile)(
-      "okx-a2a",
-      ["doctor", "--fix", "--non-interactive", "--target", "hermes", "--json"],
-      { env, timeout: 180_000 },
-    );
-    const doctor = JSON.parse(doctorStdout.trim());
-    const doctorReady = doctor.ready ?? doctor.data?.ready;
-    if (doctorReady !== true) {
-      const details = [
-        doctor.userMessage ?? doctor.data?.userMessage,
-        ...(doctor.nextActions ?? doctor.data?.nextActions ?? []).map((action) =>
-          typeof action === "string" ? action : [action.why, action.command].filter(Boolean).join(": "),
-        ),
-      ].filter(Boolean).join(" | ");
-      throw new Error(`OKX A2A doctor did not report ready${details ? `: ${details}` : ""}`);
-    }
     if (!hermesInferenceVerified) {
       runtimeStatus.a2aResponder = "testing-inference";
       const { stdout } = await promisify(execFile)(
@@ -491,6 +475,26 @@ async function startA2AResponder() {
     }
     const daemonStatus = await startForegroundA2ADaemon(env, taskHome);
     runtimeDetails.a2aResponder.daemonStatus = daemonStatus.slice(0, 1_000);
+    // Run doctor after the foreground listener owns the daemon lock. The
+    // doctor --fix path installs OS autostart and starts a second detached
+    // listener, which can leave App Runner reporting a stale healthy process.
+    const { stdout: doctorStdout } = await promisify(execFile)(
+      "okx-a2a",
+      ["doctor", "--non-interactive", "--target", "hermes", "--json"],
+      { env, timeout: 180_000 },
+    );
+    const doctor = JSON.parse(doctorStdout.trim());
+    const doctorReady = doctor.ready ?? doctor.data?.ready;
+    if (doctorReady !== true) {
+      const details = [
+        doctor.userMessage ?? doctor.data?.userMessage,
+        ...(doctor.nextActions ?? doctor.data?.nextActions ?? []).map((action) =>
+          typeof action === "string" ? action : [action.why, action.command].filter(Boolean).join(": "),
+        ),
+      ].filter(Boolean).join(" | ");
+      throw new Error(`OKX A2A doctor did not report ready${details ? `: ${details}` : ""}`);
+    }
+    console.log(`[prime-port] OKX A2A doctor passed with the foreground listener: ${redactCommandOutput(doctor.userMessage ?? "ready")}`);
     console.log(`[prime-port] cloud Hermes/${hermesProvider} A2A responder configured for #${agentId} (${hermesModel})`);
   } catch (error) {
     if (a2aDaemonProcess) {
