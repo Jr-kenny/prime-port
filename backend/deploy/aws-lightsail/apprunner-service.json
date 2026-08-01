@@ -17,7 +17,7 @@
           "ENABLE_GENLAYER_RELAYER": "0",
           "EXPECTED_OKX_AGENT_ID": "5982",
           "HERMES_PROVIDER": "openrouter",
-          "HERMES_MODEL": "deepseek/deepseek-v4-flash-0731",
+          "HERMES_MODEL": "deepseek/deepseek-v4-flash",
           "XMTP_ENV": "production",
           "PUBLISH_PRICE": "$0.0001",
           "PUBLIC_BASE_URL": "https://mxm6w9ajeg.us-east-1.awsapprunner.com",
