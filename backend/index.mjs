@@ -91,6 +91,26 @@ function recordA2AFailure(error) {
   return details;
 }
 
+async function verifyOpenRouterKey(env) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/key", {
+      headers: { Authorization: `Bearer ${env.OPENROUTER_API_KEY}` },
+      signal: controller.signal,
+    });
+    const body = await response.text();
+    if (!response.ok) {
+      throw new Error(`OpenRouter key preflight HTTP ${response.status}: ${body.slice(0, 240)}`);
+    }
+    const payload = JSON.parse(body);
+    if (!payload?.data) throw new Error("OpenRouter key preflight returned no key data");
+    console.log("[prime-port] OpenRouter key preflight passed");
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function scheduleA2ASetupRetry(delayMs = 30_000) {
   setTimeout(() => {
     void startA2AResponder();
@@ -474,6 +494,7 @@ async function startA2AResponder() {
       ["ai-provider", "set", "--provider", "hermes", "--json"],
       { env, timeout: 30_000 },
     );
+    if (hermesProvider === "openrouter") await verifyOpenRouterKey(env);
     if (!hermesInferenceVerified) {
       runtimeStatus.a2aResponder = "testing-inference";
       let stdout;
