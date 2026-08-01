@@ -39,6 +39,7 @@ const runtimeDetails = {
 const processStartedAt = Date.now();
 const healthStartupGraceMs = Number(process.env.HEALTH_STARTUP_GRACE_MS ?? 300_000);
 let hermesInferenceVerified = false;
+let a2aDaemonProcess;
 
 const bytesToMiB = (bytes) => bytes == null ? null : Math.round((bytes / 1024 / 1024) * 10) / 10;
 const readCgroupBytes = (path) => {
@@ -88,6 +89,59 @@ function recordA2AFailure(error) {
   runtimeDetails.a2aResponder.lastFailureAt = new Date().toISOString();
   runtimeDetails.a2aResponder.lastFailure = details.slice(0, 12_000);
   return details;
+}
+
+function scheduleA2ASetupRetry(delayMs = 30_000) {
+  setTimeout(() => {
+    void startA2AResponder();
+  }, delayMs).unref();
+}
+
+async function startForegroundA2ADaemon(env, taskHome) {
+  try {
+    await promisify(execFile)("okx-a2a", ["daemon", "stop"], { env, timeout: 120_000 });
+  } catch (error) {
+    console.warn(`[prime-port] no detached A2A daemon to stop: ${commandFailureDetails(error)}`);
+  }
+
+  const child = spawn("okx-a2a", ["run"], { env, stdio: "inherit" });
+  a2aDaemonProcess = child;
+  child.on("exit", (code, signal) => {
+    if (a2aDaemonProcess !== child) return;
+    a2aDaemonProcess = undefined;
+    runtimeStatus.a2aResponder = "retrying-setup";
+    const failure = new Error(`foreground okx-a2a daemon exited code=${code ?? "null"} signal=${signal ?? "none"}`);
+    console.error(`[prime-port] ${failure.message}, retrying in 30s`);
+    recordA2AFailure(failure);
+    scheduleA2ASetupRetry();
+  });
+
+  const ownerPath = `${taskHome}/run/daemon.lock/owner.json`;
+  const deadline = Date.now() + 180_000;
+  let lastStatus = "";
+  while (Date.now() < deadline) {
+    if (child.exitCode != null) {
+      throw new Error(`foreground okx-a2a daemon exited before ready: code=${child.exitCode}`);
+    }
+    try {
+      const { stdout } = await promisify(execFile)("okx-a2a", ["daemon", "status"], { env, timeout: 30_000 });
+      lastStatus = redactCommandOutput(stdout);
+      runtimeDetails.a2aResponder.daemonStatus = lastStatus;
+      let owner = null;
+      try {
+        owner = JSON.parse(readFileSync(ownerPath, "utf8"));
+      } catch {
+        owner = null;
+      }
+      if (/\brunning\b/i.test(stdout) && owner?.ready === true) {
+        return lastStatus;
+      }
+    } catch (error) {
+      lastStatus = commandFailureDetails(error);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+  throw new Error(`foreground okx-a2a daemon did not become ready: ${lastStatus || "no status output"}`);
 }
 
 const ONCHAINOS_SESSION_FILES = ["keyring.enc", "machine-identity", "session.json", "wallets.json"];
@@ -318,18 +372,13 @@ function scheduleA2ARecycle(env, recycleMs) {
     runtimeStatus.a2aResponder = "recycling";
     console.log(`[prime-port] recycling cloud A2A responder after ${Math.round(recycleMs / 60_000)}m to bound memory`);
     try {
-      await promisify(execFile)(
-        "okx-a2a",
-        ["daemon", "restart", "--provider", "hermes"],
-        { env, timeout: 180_000 },
-      );
-      console.log("[prime-port] cloud A2A responder recycle complete");
-      runtimeStatus.a2aResponder = "running";
-      scheduleA2ARecycle(env, recycleMs);
+      a2aDaemonProcess?.kill("SIGTERM");
+      a2aDaemonProcess = undefined;
+      scheduleA2ASetupRetry(1_000);
     } catch (error) {
       runtimeStatus.a2aResponder = "retrying-setup";
       console.error(`[prime-port] cloud A2A recycle failed, repairing in 60s: ${error.message}`);
-      setTimeout(startA2AResponder, 60_000).unref();
+      scheduleA2ASetupRetry(60_000);
     }
   }, recycleMs);
   recycleTimer.unref();
@@ -385,6 +434,7 @@ async function startA2AResponder() {
   const env = {
     ...process.env,
     OKX_AGENT_TASK_HOME: taskHome,
+    OKX_AGENT_TASK_DAEMON: "1",
     OKX_A2A_AI_CWD: aiWorkspace,
     HERMES_HOME: hermesHome,
     OKX_A2A_AI_PROVIDER: "hermes",
@@ -439,20 +489,17 @@ async function startA2AResponder() {
       hermesInferenceVerified = true;
       console.log(`[prime-port] Hermes/${hermesProvider} inference smoke test passed`);
     }
-    const { stdout: daemonStatus } = await promisify(execFile)(
-      "okx-a2a",
-      ["daemon", "status"],
-      { env, timeout: 30_000 },
-    );
-    runtimeDetails.a2aResponder.daemonStatus = redactCommandOutput(daemonStatus).slice(0, 1_000);
-    if (!/\brunning\b/i.test(daemonStatus)) {
-      throw new Error(`okx-a2a daemon is not running: ${runtimeDetails.a2aResponder.daemonStatus || "no status output"}`);
-    }
+    const daemonStatus = await startForegroundA2ADaemon(env, taskHome);
+    runtimeDetails.a2aResponder.daemonStatus = daemonStatus.slice(0, 1_000);
     console.log(`[prime-port] cloud Hermes/${hermesProvider} A2A responder configured for #${agentId} (${hermesModel})`);
   } catch (error) {
+    if (a2aDaemonProcess) {
+      a2aDaemonProcess.kill("SIGTERM");
+      a2aDaemonProcess = undefined;
+    }
     runtimeStatus.a2aResponder = "retrying-setup";
     console.error(`[prime-port] cloud A2A setup failed, retrying in 60s: ${recordA2AFailure(error)}`);
-    setTimeout(startA2AResponder, 60_000).unref();
+    scheduleA2ASetupRetry(60_000);
     return;
   }
 
