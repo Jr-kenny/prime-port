@@ -456,17 +456,28 @@ async function startA2AResponder() {
     );
     if (!hermesInferenceVerified) {
       runtimeStatus.a2aResponder = "testing-inference";
-      const { stdout } = await promisify(execFile)(
-        "hermes",
-        [
-          "--oneshot",
-          "Reply with exactly PRIME_PORT_HERMES_OK and nothing else.",
-          "--model", hermesModel,
-          "--provider", hermesProvider,
-          "--ignore-rules",
-        ],
-        { env, timeout: 180_000 },
-      );
+      let stdout;
+      try {
+        ({ stdout } = await promisify(execFile)(
+          "hermes",
+          [
+            "--oneshot",
+            "Reply with exactly PRIME_PORT_HERMES_OK and nothing else.",
+            "--model", hermesModel,
+            "--provider", hermesProvider,
+            "--ignore-rules",
+          ],
+          { env, timeout: 180_000 },
+        ));
+      } catch (error) {
+        // Hermes can print the complete answer and then linger past the
+        // wrapper timeout while closing its provider client. The sentinel is
+        // sufficient proof that inference succeeded, so don't retry a good
+        // cold start just because the child did not exit promptly.
+        stdout = String(error?.stdout ?? "");
+        if (!stdout.includes("PRIME_PORT_HERMES_OK")) throw error;
+        console.warn("[prime-port] Hermes smoke test returned the expected sentinel before process exit");
+      }
       if (!stdout.includes("PRIME_PORT_HERMES_OK")) {
         throw new Error(`Hermes/${hermesProvider} inference smoke test returned an unexpected response`);
       }
