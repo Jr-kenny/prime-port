@@ -6,7 +6,7 @@
       "AccessRoleArn": "arn:aws:iam::572908218886:role/prime-port-apprunner-ecr"
     },
     "ImageRepository": {
-      "ImageIdentifier": "572908218886.dkr.ecr.us-east-1.amazonaws.com/prime-port:20260719-settlement-handoff-v2",
+      "ImageIdentifier": "572908218886.dkr.ecr.us-east-1.amazonaws.com/prime-port:362a7bb",
       "ImageRepositoryType": "ECR",
       "ImageConfiguration": {
         "Port": "7860",
