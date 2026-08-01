@@ -20,3 +20,8 @@ The deployment is deliberately staged:
 
 The old shared marketplace settlement watcher stays off. Exactly one A2A
 responder may be active for public agent `5982`.
+
+The operator Mac must not run `okx-a2a daemon` for this identity. The daemon
+refreshes every agent in its shared OnchainOS home and has no per-agent listener
+filter, so an autostarted Mac daemon can compete with the cloud responder.
+Keep the public responder in App Runner only.

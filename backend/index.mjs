@@ -26,6 +26,18 @@ const runtimeStatus = {
   a2aResponder: "disabled",
   genlayerRelayer: "disabled",
 };
+const runtimeDetails = {
+  a2aResponder: {
+    lastAttemptAt: null,
+    lastReadyAt: null,
+    lastFailureAt: null,
+    lastFailure: null,
+    hermesVersion: null,
+    daemonStatus: null,
+  },
+};
+const processStartedAt = Date.now();
+const healthStartupGraceMs = Number(process.env.HEALTH_STARTUP_GRACE_MS ?? 300_000);
 let hermesInferenceVerified = false;
 
 const bytesToMiB = (bytes) => bytes == null ? null : Math.round((bytes / 1024 / 1024) * 10) / 10;
@@ -50,6 +62,33 @@ const serviceReady = () =>
   (!isEnabled(process.env.ENABLE_MARKETPLACE_WATCHER) || runtimeStatus.marketplaceWatcher === "running")
   && (!isEnabled(process.env.ENABLE_A2A_RESPONDER) || runtimeStatus.a2aResponder === "running")
   && (!isEnabled(process.env.ENABLE_GENLAYER_RELAYER) || runtimeStatus.genlayerRelayer === "running");
+
+function redactCommandOutput(value) {
+  return String(value ?? "")
+    .replace(/\u001b\[[0-?]*[ -\/]*[@-~]/g, "")
+    .replace(/((?:api[_-]?key|secret(?:[_-]?key)?|passphrase|token|authorization)\s*[:=]\s*)\S+/gi, "$1<redacted>")
+    .trim();
+}
+
+function commandFailureDetails(error) {
+  const details = [];
+  if (error?.code != null) details.push(`code=${error.code}`);
+  if (error?.signal) details.push(`signal=${error.signal}`);
+  const message = redactCommandOutput(error?.message);
+  if (message) details.push(`message=${message}`);
+  for (const [name, value] of [["stderr", error?.stderr], ["stdout", error?.stdout]]) {
+    const output = redactCommandOutput(value);
+    if (output) details.push(`${name}=${output.slice(0, 12_000)}`);
+  }
+  return details.join(" | ") || "unknown command failure";
+}
+
+function recordA2AFailure(error) {
+  const details = commandFailureDetails(error);
+  runtimeDetails.a2aResponder.lastFailureAt = new Date().toISOString();
+  runtimeDetails.a2aResponder.lastFailure = details.slice(0, 12_000);
+  return details;
+}
 
 const ONCHAINOS_SESSION_FILES = ["keyring.enc", "machine-identity", "session.json", "wallets.json"];
 const onchainosHome = `${process.env.HOME ?? "/app"}/.onchainos`;
@@ -122,8 +161,18 @@ startBackupLoop();
 createServer((req, res) => {
   const path = new URL(req.url, "http://x").pathname;
   if (path === "/" || path === "/health") {
-    res.writeHead(200, { "content-type": "application/json" });
-    return res.end(JSON.stringify({ ok: serviceReady(), service: "prime-port", components: runtimeStatus, memory: memoryStatus() }));
+    const ready = serviceReady();
+    const inStartupGrace = !ready && Date.now() - processStartedAt < healthStartupGraceMs;
+    const statusCode = ready || inStartupGrace ? 200 : 503;
+    res.writeHead(statusCode, { "content-type": "application/json" });
+    return res.end(JSON.stringify({
+      ok: ready,
+      service: "prime-port",
+      components: runtimeStatus,
+      details: runtimeDetails,
+      startupGrace: inStartupGrace,
+      memory: memoryStatus(),
+    }));
   }
   const port = publicUpstream(path, req.method);
   if (!port) {
@@ -147,20 +196,34 @@ createServer((req, res) => {
 let okxLoginPromise;
 function ensureOkxLogin() {
   if (!okxLoginPromise) {
-    const command = hasOnchainosEmailSession
-      ? promisify(execFile)("onchainos", ["wallet", "status"], { timeout: 120_000 }).then(({ stdout }) => {
-        const status = JSON.parse(stdout);
-        if (!status?.ok || !status?.data?.loggedIn) {
-          throw new Error("restored OnchainOS email session is not logged in; refresh the managed session bundle from an authenticated operator session");
+    const command = (async () => {
+      if (hasOnchainosEmailSession) {
+        try {
+          const { stdout } = await promisify(execFile)("onchainos", ["wallet", "status"], { timeout: 120_000 });
+          const status = JSON.parse(stdout);
+          if (status?.ok && status?.data?.loggedIn) {
+            const expectedEmail = process.env.EXPECTED_OKX_EMAIL?.trim().toLowerCase();
+            const actualEmail = status.data.email?.trim().toLowerCase();
+            if (expectedEmail && actualEmail !== expectedEmail) {
+              throw new Error(`restored OnchainOS session belongs to ${actualEmail || "an unknown account"}, expected ${expectedEmail}`);
+            }
+            console.log(`[prime-port] onchainos email session ready (${status.data.email || "email account"})`);
+            return;
+          }
+          console.warn("[prime-port] restored OnchainOS email session is expired or logged out, falling back to API credentials");
+        } catch (error) {
+          if (String(error?.message ?? "").startsWith("restored OnchainOS session belongs to ")) throw error;
+          console.warn(`[prime-port] restored OnchainOS session check failed, falling back to API credentials: ${commandFailureDetails(error)}`);
         }
-        const expectedEmail = process.env.EXPECTED_OKX_EMAIL?.trim().toLowerCase();
-        const actualEmail = status.data.email?.trim().toLowerCase();
-        if (expectedEmail && actualEmail !== expectedEmail) {
-          throw new Error(`restored OnchainOS session belongs to ${actualEmail || "an unknown account"}, expected ${expectedEmail}`);
-        }
-        console.log(`[prime-port] onchainos email session ready (${status.data.email || "email account"})`);
-      })
-      : Promise.reject(new Error("OnchainOS social-login session bundle is missing"));
+      }
+
+      const missing = ["OKX_API_KEY", "OKX_SECRET_KEY", "OKX_PASSPHRASE"].filter((name) => !process.env[name]);
+      if (missing.length) {
+        throw new Error(`OnchainOS session is unavailable and API credentials are missing: ${missing.join(", ")}`);
+      }
+      await promisify(execFile)("onchainos", ["wallet", "login", "--force"], { timeout: 120_000 });
+      console.log("[prime-port] onchainos wallet login ok using configured API credentials");
+    })();
     okxLoginPromise = command
       .catch((error) => {
         okxLoginPromise = undefined;
@@ -273,6 +336,7 @@ function scheduleA2ARecycle(env, recycleMs) {
 }
 
 async function startA2AResponder() {
+  runtimeDetails.a2aResponder.lastAttemptAt = new Date().toISOString();
   if (!isEnabled(process.env.ENABLE_A2A_RESPONDER)) {
     runtimeStatus.a2aResponder = "disabled";
     console.log("[prime-port] ENABLE_A2A_RESPONDER is off, cloud A2A responder disabled");
@@ -332,7 +396,9 @@ async function startA2AResponder() {
     await ensureOkxLogin();
     const agentId = await assertAgentVisible(process.env.EXPECTED_OKX_AGENT_ID ?? "5982", env);
     await promisify(execFile)("onchainos", ["preflight", "--skill-version", "4.4.1"], { env, timeout: 180_000 });
-    await promisify(execFile)("hermes", ["version"], { env, timeout: 30_000 });
+    const { stdout: hermesVersion } = await promisify(execFile)("hermes", ["version"], { env, timeout: 30_000 });
+    runtimeDetails.a2aResponder.hermesVersion = redactCommandOutput(hermesVersion).slice(0, 1_000);
+    console.log(`[prime-port] Hermes version check passed: ${runtimeDetails.a2aResponder.hermesVersion || "(no version output)"}`);
     await promisify(execFile)(
       "okx-a2a",
       ["ai-provider", "set", "--provider", "hermes", "--json"],
@@ -373,15 +439,26 @@ async function startA2AResponder() {
       hermesInferenceVerified = true;
       console.log(`[prime-port] Hermes/${hermesProvider} inference smoke test passed`);
     }
+    const { stdout: daemonStatus } = await promisify(execFile)(
+      "okx-a2a",
+      ["daemon", "status"],
+      { env, timeout: 30_000 },
+    );
+    runtimeDetails.a2aResponder.daemonStatus = redactCommandOutput(daemonStatus).slice(0, 1_000);
+    if (!/\brunning\b/i.test(daemonStatus)) {
+      throw new Error(`okx-a2a daemon is not running: ${runtimeDetails.a2aResponder.daemonStatus || "no status output"}`);
+    }
     console.log(`[prime-port] cloud Hermes/${hermesProvider} A2A responder configured for #${agentId} (${hermesModel})`);
   } catch (error) {
     runtimeStatus.a2aResponder = "retrying-setup";
-    console.error(`[prime-port] cloud A2A setup failed, retrying in 60s: ${error.message}`);
-    setTimeout(startA2AResponder, 60_000);
+    console.error(`[prime-port] cloud A2A setup failed, retrying in 60s: ${recordA2AFailure(error)}`);
+    setTimeout(startA2AResponder, 60_000).unref();
     return;
   }
 
   runtimeStatus.a2aResponder = "running";
+  runtimeDetails.a2aResponder.lastReadyAt = new Date().toISOString();
+  runtimeDetails.a2aResponder.lastFailure = null;
   // App Runner already supervises the container. Recycling only the nested
   // daemon left Hermes unavailable after four hours, so keep it stable unless
   // an operator explicitly opts into a tested recycle interval.

@@ -34,8 +34,15 @@ RUN npm config set fetch-retries 5 \
  && npm config set fetch-retry-maxtimeout 120000 \
  && npm install -g @okxweb3/a2a-node@${OKX_A2A_VERSION} \
  && python3 -m venv /opt/hermes \
- && /opt/hermes/bin/pip install --no-cache-dir \
-      "git+https://github.com/NousResearch/hermes-agent.git@${HERMES_VERSION}" \
+ && git config --global http.version HTTP/1.1 \
+ && for attempt in 1 2 3 4 5; do \
+      if /opt/hermes/bin/pip install --no-cache-dir --timeout 120 \
+        "git+https://github.com/NousResearch/hermes-agent.git@${HERMES_VERSION}"; then \
+        break; \
+      fi; \
+      if [ "$attempt" -eq 5 ]; then exit 1; fi; \
+      sleep "$((attempt * 5))"; \
+    done \
  && ln -s /opt/hermes/bin/hermes /usr/local/bin/hermes \
  && plugin_work="$(mktemp -d)" \
  && npm pack "@okxweb3/a2a-hermes@${OKX_A2A_VERSION}" --pack-destination "$plugin_work" \
@@ -44,6 +51,9 @@ RUN npm config set fetch-retries 5 \
  && mkdir -p /app/hermes \
  && HERMES_HOME=/app/hermes bash "$plugin_work"/okx-a2a-hermes-plugin/scripts/install-or-upgrade.sh \
       --target /app/hermes/plugins/platforms/okx-a2a \
+ && HERMES_HOME=/app/hermes hermes version \
+ && okx-a2a --version \
+ && onchainos --version \
  && rm -rf "$plugin_work"
 
 WORKDIR /app
