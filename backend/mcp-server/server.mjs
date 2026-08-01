@@ -1225,38 +1225,77 @@ paymentServer.onSettleFailure(async ({ paymentPayload, error }) => {
   }
   console.error(`[mcp-server] x402 settlement failed for ${pending.jobId}: ${error.message}`);
 });
+const paidPublishServiceDescription = [
+  "You are the calling buyer agent. Use this paid operation when you need a real human to do work that the agent cannot do directly.",
+  "Send one complete brief for the human job, not a request to publish or describe an agent service.",
+  "The publication fee creates the job and a private Prime Port. It does not pay the freelancer wage and it does not guarantee that a freelancer will claim the job.",
+  "After success, use the returned jobId and private MCP port to inspect offers, clarify the brief, negotiate, choose a freelancer, review revisions, and approve or dispute the final work.",
+].join(" ");
+
 const paidPublishInputSchema = {
   type: "object",
+  additionalProperties: false,
   properties: {
-    title: { type: "string", minLength: 8, maxLength: 120 },
-    description: { type: "string", minLength: 30 },
-    criteria: { type: "string", minLength: 10 },
-    deliverables: { type: "string", minLength: 10 },
-    price: { type: "string", pattern: "^\\d+(\\.\\d{1,6})?$" },
-    currency: { type: "string", enum: ["USDT"], default: "USDT" },
-    deadline: { type: "integer", description: "Unix seconds UTC" },
-    agentId: { type: "string" },
-    agentWallet: { type: "string", pattern: "^0x[0-9a-fA-F]{40}$" },
+    title: {
+      type: "string",
+      minLength: 8,
+      maxLength: 120,
+      description: "A short title for the actual human task, such as 'Photograph a Lagos storefront'. Do not use 'post a job' or 'publish a listing'.",
+    },
+    description: {
+      type: "string",
+      minLength: 30,
+      description: "What the human must do, including useful context, location, inputs, constraints, or steps. Write a concrete job brief.",
+    },
+    criteria: {
+      type: "string",
+      minLength: 10,
+      description: "How the calling agent will judge completion. State observable facts, checks, or quality requirements.",
+    },
+    deliverables: {
+      type: "string",
+      minLength: 10,
+      description: "The files, links, text, photos, evidence, or other outputs the freelancer must return.",
+    },
+    price: {
+      type: "string",
+      pattern: "^\\d+(\\.\\d{1,6})?$",
+      description: "Optional opening wage offer as a decimal USDT amount. Omit this to let freelancers name their rates during negotiation.",
+    },
+    currency: {
+      type: "string",
+      enum: ["USDT"],
+      default: "USDT",
+      description: "Currency for the optional freelancer wage offer. The publication fee is separate.",
+    },
+    deadline: {
+      type: "integer",
+      description: "Unix timestamp in UTC for the human job deadline. It must be in the future.",
+    },
+    agentId: {
+      type: "string",
+      description: "The calling buyer agent's OKX agent ID. This identifies who owns the private port and signs later hire terms.",
+    },
+    agentWallet: {
+      type: "string",
+      pattern: "^0x[0-9a-fA-F]{40}$",
+      description: "The calling buyer agent's X Layer wallet. It must match the verified x402 payer wallet that authorizes the publication fee.",
+    },
   },
   required: ["title", "description", "criteria", "deliverables", "deadline", "agentId", "agentWallet"],
 };
 const paidPublishOutputSchema = {
   method: "POST",
-  input: {
-    title: { carrier: "body", required: true, type: "string" },
-    description: { carrier: "body", required: true, type: "string" },
-    criteria: { carrier: "body", required: true, type: "string" },
-    deliverables: { carrier: "body", required: true, type: "string" },
-    price: { carrier: "body", required: false, type: "string" },
-    currency: { carrier: "body", required: false, type: "string" },
-    deadline: { carrier: "body", required: true, type: "integer" },
-    agentId: { carrier: "body", required: true, type: "string" },
-    agentWallet: { carrier: "body", required: true, type: "string" },
-  },
+  description: paidPublishServiceDescription,
+  input: Object.fromEntries(Object.entries(paidPublishInputSchema.properties).map(([name, field]) => [name, {
+    ...field,
+    carrier: "body",
+    required: paidPublishInputSchema.required.includes(name),
+  }])),
 };
 const requiredPaidPublishFields = Object.entries(paidPublishOutputSchema.input)
   .filter(([, field]) => field.required)
-  .map(([name, field]) => ({ name, type: field.type, description: `Required ${name} field` }));
+  .map(([name, field]) => ({ name, type: field.type, description: field.description }));
 
 function requirePublishInputBeforeSignedReplay(req, res, next) {
   if (!paymentSignatureHeader(req)) return next();
@@ -1281,7 +1320,7 @@ const publishPaymentRequirements = {
     price: PUBLISH_PRICE,
     maxTimeoutSeconds: 300,
   }],
-  description: "Publish a fully specified human job and create its private Prime Port",
+  description: paidPublishServiceDescription,
   mimeType: "application/json",
   resource: `${PUBLIC_BASE_URL}/mcp/publish`,
   // Keep the x402 v2 challenge in PAYMENT-REQUIRED and describe the business

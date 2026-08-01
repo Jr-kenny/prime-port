@@ -78,6 +78,9 @@ test("paid publish advertises the exact 1 USDt0 payment and its POST input schem
   assert.equal(discoveryBody.x402Version, discoveryChallenge.x402Version);
   assert.deepEqual(discoveryBody.resource, discoveryChallenge.resource);
   assert.deepEqual(discoveryBody.accepts, discoveryChallenge.accepts);
+  assert.match(discoveryBody.resource.description, /calling buyer agent/);
+  assert.match(discoveryBody.resource.description, /real human/);
+  assert.match(discoveryBody.resource.description, /private Prime Port/);
 
   const response = await fetch(`${endpoint}/mcp/publish`, {
     method: "POST",
@@ -91,16 +94,17 @@ test("paid publish advertises the exact 1 USDt0 payment and its POST input schem
   assert.deepEqual(unpaidBody.resource, discoveryChallenge.resource);
   assert.deepEqual(unpaidBody.accepts, discoveryChallenge.accepts);
   assert.equal(unpaidBody.outputSchema.method, "POST");
-  assert.deepEqual(unpaidBody.outputSchema.input.title, {
-    carrier: "body",
-    required: true,
-    type: "string",
-  });
-  assert.deepEqual(unpaidBody.outputSchema.input.deadline, {
-    carrier: "body",
-    required: true,
-    type: "integer",
-  });
+  assert.match(unpaidBody.outputSchema.description, /calling buyer agent/);
+  assert.equal(unpaidBody.outputSchema.input.title.carrier, "body");
+  assert.equal(unpaidBody.outputSchema.input.title.required, true);
+  assert.equal(unpaidBody.outputSchema.input.title.type, "string");
+  assert.equal(unpaidBody.outputSchema.input.title.minLength, 8);
+  assert.match(unpaidBody.outputSchema.input.title.description, /actual human task/);
+  assert.equal(unpaidBody.outputSchema.input.deadline.carrier, "body");
+  assert.equal(unpaidBody.outputSchema.input.deadline.required, true);
+  assert.equal(unpaidBody.outputSchema.input.deadline.type, "integer");
+  assert.match(unpaidBody.outputSchema.input.deadline.description, /future/);
+  assert.match(unpaidBody.outputSchema.input.agentWallet.description, /x402 payer/);
   assert.equal(unpaidBody.outputSchema.input.price.required, false);
 
   const encoded = response.headers.get("payment-required");
