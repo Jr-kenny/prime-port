@@ -446,6 +446,20 @@ async function startA2AResponder() {
     OKX_A2A_AI_PROVIDER: "hermes",
     OKX_A2A_AI_PERMISSION_PRESET: "bypass",
   };
+  const smokeEnv = { ...env, HERMES_HOME: `${hermesHome}/smoke` };
+  for (const name of [
+    "OKX_AGENT_TASK_HOME",
+    "OKX_AGENT_TASK_DAEMON",
+    "OKX_A2A_AI_CWD",
+    "OKX_A2A_AI_PROVIDER",
+    "OKX_A2A_AI_PERMISSION_PRESET",
+  ]) delete smokeEnv[name];
+  mkdirSync(smokeEnv.HERMES_HOME, { recursive: true });
+  writeFileSync(
+    `${smokeEnv.HERMES_HOME}/config.yaml`,
+    `model:\n  provider: ${hermesProvider}\n  default: ${hermesModel}\nagent:\n  reasoning_effort: ${hermesReasoningEffort}\nplugins:\n  enabled: []\n`,
+    { mode: 0o600 },
+  );
 
   try {
     runtimeStatus.a2aResponder = "starting";
@@ -473,7 +487,7 @@ async function startA2AResponder() {
             "--provider", hermesProvider,
             "--ignore-rules",
           ],
-          { env, timeout: 180_000 },
+          { env: smokeEnv, timeout: 180_000 },
         ));
       } catch (error) {
         // Hermes can print the complete answer and then linger past the
