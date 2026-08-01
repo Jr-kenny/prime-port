@@ -403,6 +403,7 @@ async function startA2AResponder() {
   const hermesModel = process.env.HERMES_MODEL
     ?? process.env.HERMES_NVIDIA_MODEL
     ?? "gemini-3.1-flash-lite";
+  const hermesReasoningEffort = process.env.HERMES_REASONING_EFFORT ?? "medium";
   const providerKeyPresent = {
     gemini: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY),
     nvidia: Boolean(process.env.NVIDIA_API_KEY),
@@ -423,12 +424,17 @@ async function startA2AResponder() {
     console.error("[prime-port] HERMES_MODEL contains unsupported characters");
     return;
   }
+  if (!/^(none|minimal|low|medium|high|xhigh|max|ultra)$/.test(hermesReasoningEffort)) {
+    runtimeStatus.a2aResponder = "blocked:invalid-hermes-reasoning-effort";
+    console.error("[prime-port] HERMES_REASONING_EFFORT contains unsupported value");
+    return;
+  }
   mkdirSync(taskHome, { recursive: true });
   mkdirSync(aiWorkspace, { recursive: true });
   mkdirSync(hermesHome, { recursive: true });
   writeFileSync(
     `${hermesHome}/config.yaml`,
-    `model:\n  provider: ${hermesProvider}\n  default: ${hermesModel}\nplugins:\n  enabled:\n    - okx-a2a\n`,
+    `model:\n  provider: ${hermesProvider}\n  default: ${hermesModel}\nagent:\n  reasoning_effort: ${hermesReasoningEffort}\nplugins:\n  enabled:\n    - okx-a2a\n`,
     { mode: 0o600 },
   );
   const env = {
