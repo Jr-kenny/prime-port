@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,9 +27,33 @@ async function waitUntilReady(child) {
 
 test("paid publish advertises the exact 1 USDt0 payment and its POST input schema", async (t) => {
   const dataDir = mkdtempSync(join(tmpdir(), "prime-port-x402-test-"));
+  const recoveryJobId = "job-recovered-after-ephemeral-loss";
+  writeFileSync(join(dataDir, "jobs.json"), JSON.stringify({
+    [recoveryJobId]: {
+      jobId: recoveryJobId,
+      status: "open",
+      title: "Recovered paid publication",
+      description: "A settled publication whose unused port needs to be recreated after ephemeral state loss.",
+      deliverables: "One short verification message.",
+      criteria: "The message reaches the buyer.",
+      price: null,
+      currency: "USDT",
+      deadline: 1999999999,
+      agent: { agentId: "5941", wallet: "0x1111111111111111111111111111111111111111" },
+      port: { recoveryPending: true },
+      claims: [],
+      submissions: [],
+      a2a: { enabled: false },
+      publishTask: { paidAt: 1, paymentMode: "x402" },
+      createdAt: 1,
+    },
+  }));
+  const recoveredPortJobs = [];
   const portService = createServer(async (req, res) => {
     if (req.method === "POST" && req.url === "/ports") {
-      for await (const _chunk of req) {}
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      recoveredPortJobs.push(JSON.parse(body).jobId);
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({
         inboxId: "test-port-inbox-id",
@@ -65,6 +89,12 @@ test("paid publish advertises the exact 1 USDt0 payment and its POST input schem
     rmSync(dataDir, { recursive: true, force: true });
   });
   await waitUntilReady(child);
+
+  assert.ok(recoveredPortJobs.includes(recoveryJobId));
+  const recoveredState = JSON.parse(readFileSync(join(dataDir, "jobs.json"), "utf8"))[recoveryJobId];
+  assert.equal(recoveredState.port.recoveryPending, undefined);
+  assert.equal(recoveredState.port.inboxId, "test-port-inbox-id");
+  assert.ok(recoveredState.portRecoveredAt);
 
   const discoveryResponse = await fetch(`${endpoint}/mcp/publish`, {
     headers: { accept: "application/json" },

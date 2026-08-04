@@ -51,6 +51,28 @@ export function buildA2ASendArgs({ conversation, buyerAgentId, localAgentId, mes
   ];
 }
 
+export function buildA2ASessionCreateArgs({ conversationJobId, buyerAgentId, localAgentId }) {
+  return [
+    "session", "create",
+    "--job-id", String(conversationJobId),
+    "--my-agent-id", String(localAgentId),
+    "--to-agent-id", String(buyerAgentId),
+    "--json",
+  ];
+}
+
+export function selectA2AConversationTask(tasks, { buyerAgentId, localAgentId }) {
+  const allowedStatuses = new Set(["created", "accepted", "submitted", "disputed"]);
+  return (Array.isArray(tasks) ? tasks : []).find((task) => (
+    String(task?.myAgentId ?? "") === String(localAgentId)
+    && String(task?.counterpartyAgentId ?? "") === String(buyerAgentId)
+    && String(task?.myRole ?? "").toLowerCase() === "asp"
+    && allowedStatuses.has(String(task?.status ?? "").toLowerCase())
+    && typeof task?.jobId === "string"
+    && task.jobId.length > 0
+  )) ?? null;
+}
+
 export function ensureCandidateAliases(job) {
   const claims = Array.isArray(job?.claims) ? job.claims : [];
   const used = new Set();

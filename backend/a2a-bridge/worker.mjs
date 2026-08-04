@@ -1,6 +1,10 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { buildA2ASendArgs } from "./core.mjs";
+import {
+  buildA2ASendArgs,
+  buildA2ASessionCreateArgs,
+  selectA2AConversationTask,
+} from "./core.mjs";
 
 const run = promisify(execFile);
 const INTERNAL_URL = process.env.PRIME_PORT_INTERNAL_URL ?? "http://127.0.0.1:8792";
@@ -37,8 +41,14 @@ function parseJsonOutput(stdout) {
 }
 
 async function resolveConversation(item) {
-  if (item.a2aJobId) return { jobId: item.a2aJobId, sessionKey: null };
   const localAgentId = String(process.env.EXPECTED_OKX_AGENT_ID ?? "5982");
+  if (item.a2aJobId) {
+    return ensureConversationSession({
+      jobId: String(item.a2aJobId),
+      buyerAgentId: item.buyerAgentId,
+      localAgentId,
+    });
+  }
   const { stdout } = await run("okx-a2a", [
     "session", "query",
     "--my-agent-id", localAgentId,
@@ -51,9 +61,52 @@ async function resolveConversation(item) {
     .filter((session) => session.jobId && session.sessionKey)
     .sort((left, right) => Date.parse(right.updatedAt ?? right.createdAt ?? 0) - Date.parse(left.updatedAt ?? left.createdAt ?? 0));
   if (sessions.length === 0) {
-    throw new Error(`no existing OKX conversation with buyer agent #${item.buyerAgentId}`);
+    const { stdout: activeTasksStdout } = await run("onchainos", [
+      "agent", "active-tasks", "--role", "asp",
+    ], { timeout: 30_000, env: process.env });
+    const activeTasks = parseJsonOutput(activeTasksStdout);
+    const task = selectA2AConversationTask(activeTasks.data?.tasks, {
+      buyerAgentId: item.buyerAgentId,
+      localAgentId,
+    });
+    if (!task) {
+      throw new Error(`no active OKX conversation with buyer agent #${item.buyerAgentId}`);
+    }
+    console.log(`[a2a-bridge] rebuilding buyer session from OKX task ${task.jobId}`);
+    return ensureConversationSession({
+      jobId: task.jobId,
+      buyerAgentId: item.buyerAgentId,
+      localAgentId,
+    });
   }
   return { jobId: String(sessions[0].jobId), sessionKey: String(sessions[0].sessionKey) };
+}
+
+async function ensureConversationSession({ jobId, buyerAgentId, localAgentId }) {
+  const { stdout: queryStdout } = await run("okx-a2a", [
+    "session", "query",
+    "--job-id", String(jobId),
+    "--my-agent-id", String(localAgentId),
+    "--to-agent-id", String(buyerAgentId),
+    "--limit", "1",
+    "--json",
+  ], { timeout: 30_000, env: process.env });
+  const query = parseJsonOutput(queryStdout);
+  const existing = (query.sessions ?? []).find((session) => session.sessionKey);
+  if (existing) {
+    return { jobId: String(jobId), sessionKey: String(existing.sessionKey) };
+  }
+
+  const { stdout: createStdout } = await run("okx-a2a", buildA2ASessionCreateArgs({
+    conversationJobId: jobId,
+    buyerAgentId,
+    localAgentId,
+  }), { timeout: 30_000, env: process.env });
+  const created = parseJsonOutput(createStdout);
+  if (!created.session?.sessionKey) {
+    throw new Error(`okx-a2a did not create a session for buyer agent #${buyerAgentId}`);
+  }
+  return { jobId: String(jobId), sessionKey: String(created.session.sessionKey) };
 }
 
 async function deliver(item) {

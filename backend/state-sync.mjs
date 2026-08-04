@@ -44,7 +44,7 @@ const safeGitError = (error) => String(error?.stderr || error?.message || error)
   .replace(/https:\/\/[^\s@]+@/g, "https://[redacted]@")
   .trim()
   .split("\n")
-  .slice(-2)
+  .slice(-8)
   .join(" | ");
 const git = (args, cwd = MIRROR) => run("git", args, { cwd });
 
@@ -82,22 +82,28 @@ export async function restoreState() {
 export const STATE_GITATTRIBUTES =
   "port-service-data/attachments/** filter=lfs diff=lfs merge=lfs -text\n" +
   "port-service-data/archive/*.attachments/** filter=lfs diff=lfs merge=lfs -text\n" +
-  "okx-a2a-data/sqlite/** filter=lfs diff=lfs merge=lfs -text\n" +
-  "okx-a2a-data/xmtp/*.db3* filter=lfs diff=lfs merge=lfs -text\n";
+  "**/*.db3 filter=lfs diff=lfs merge=lfs -text\n" +
+  "**/*.db3-* filter=lfs diff=lfs merge=lfs -text\n" +
+  "**/*.sqlite filter=lfs diff=lfs merge=lfs -text\n" +
+  "**/*.sqlite-* filter=lfs diff=lfs merge=lfs -text\n";
 
-// The A2A home contains durable SQLite/XMTP state alongside generated logs
-// and runtime configuration. The logs can grow past the Hub's normal Git file
-// limit, may contain private conversation text, and are recreated after every
-// restart. Keep the databases and job/session state, but never mirror logs,
-// process locks, or generated provider configuration.
+// The A2A home contains durable job/session state alongside generated logs,
+// command queues, and raw XMTP installation caches. A fresh installation can
+// rebuild its buyer group from the persisted session metadata plus the live
+// OKX task. Mirroring every account's raw XMTP cache made snapshots too large
+// for the state host. Keep the small session/job records and recreate caches.
 export function pruneGeneratedMirrorState(mirror = MIRROR) {
   for (const relativePath of [
     "okx-a2a-data/logs",
     "okx-a2a-data/run",
     "okx-a2a-data/tmp",
+    "okx-a2a-data/commands",
+    "okx-a2a-data/xmtp",
     "okx-a2a-data/config.toml",
-    "okx-a2a-data/xmtp/sensitive-words.json",
-    "okx-a2a-data/xmtp/system-config.json",
+    "okx-a2a-data/sqlite/command-store.sqlite",
+    "okx-a2a-data/sqlite/command-store.sqlite-shm",
+    "okx-a2a-data/sqlite/command-store.sqlite-wal",
+    "okx-a2a-data/sqlite/invalid-xmtp-messages.sqlite",
   ]) {
     rmSync(`${mirror}${relativePath}`, { recursive: true, force: true });
   }
@@ -155,16 +161,38 @@ async function backupOnce() {
   throw lastPushError;
 }
 
+let backupQueue = Promise.resolve(false);
+let requestedBackupTimer;
+let lastBackupStartedAt = 0;
+const MIN_REQUESTED_BACKUP_GAP_MS = 60_000;
+
+function runBackup() {
+  const next = backupQueue.then(async () => {
+    lastBackupStartedAt = Date.now();
+    try {
+      const pushed = await backupOnce();
+      if (pushed) console.log("[state-sync] pushed state snapshot");
+      return pushed;
+    } catch (error) {
+      console.error(`[state-sync] backup failed: ${safeGitError(error)}`);
+      return false;
+    }
+  });
+  backupQueue = next;
+  return next;
+}
+
+export function requestStateBackup(delayMs = 2_000) {
+  if (!enabled()) return;
+  clearTimeout(requestedBackupTimer);
+  const cooldown = Math.max(0, lastBackupStartedAt + MIN_REQUESTED_BACKUP_GAP_MS - Date.now());
+  requestedBackupTimer = setTimeout(() => void runBackup(), Math.max(delayMs, cooldown));
+  requestedBackupTimer.unref();
+}
+
 export function startBackupLoop() {
   if (!enabled()) return;
-  const tick = async () => {
-    try {
-      if (await backupOnce()) console.log("[state-sync] pushed state snapshot");
-    } catch (e) {
-      console.error(`[state-sync] backup failed: ${safeGitError(e)}`);
-    }
-  };
-  setInterval(tick, EVERY_MS);
-  tick();
+  setInterval(() => void runBackup(), EVERY_MS);
+  void runBackup();
   console.log(`[state-sync] backing up to ${remoteHost()} every ${EVERY_MS / 1000}s`);
 }

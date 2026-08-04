@@ -24,6 +24,7 @@ import { z } from "zod";
 import { keccak256, toBytes, verifyMessage } from "viem";
 import { canonicalize, commitmentHash } from "../commitment/commitment.mjs";
 import { clearLegacyPublicationPrice } from "../listing-price.mjs";
+import { requestStateBackup } from "../state-sync.mjs";
 import {
   assignCandidateAlias,
   enqueueA2AMessage,
@@ -77,6 +78,7 @@ const save = () => {
   const next = `${jobsPath}.next`;
   writeFileSync(next, JSON.stringify(jobs, null, 2));
   renameSync(next, jobsPath);
+  requestStateBackup();
 };
 const numericPublishPrice = PUBLISH_PRICE.match(/\d+(?:\.\d+)?/)?.[0] ?? "1";
 if (Object.values(jobs).some((job) => clearLegacyPublicationPrice(job, numericPublishPrice))) save();
@@ -97,6 +99,35 @@ const portSvc = async (method, path, body, contentType = "application/json", ext
   if (!r.ok) throw new Error(`port-service ${path}: ${j.error}`);
   return j;
 };
+
+async function recoverMarkedPorts() {
+  const recoveries = Object.values(jobs).filter((job) => job.port?.recoveryPending === true);
+  for (const job of recoveries) {
+    let recovered;
+    let lastError;
+    for (let attempt = 1; attempt <= 10; attempt += 1) {
+      try {
+        recovered = await portSvc("POST", "/ports", { jobId: job.jobId });
+        break;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 10) await new Promise((resolve) => setTimeout(resolve, 1_000));
+      }
+    }
+    if (!recovered) throw lastError ?? new Error(`failed to recover port for ${job.jobId}`);
+    job.port = {
+      inboxId: recovered.inboxId,
+      address: recovered.address,
+      grantToken: recovered.grantToken,
+    };
+    job.portRecoveredAt = Date.now();
+    save();
+    emit("port-recovered", { jobId: job.jobId, reason: "ephemeral-state-recovery" });
+    console.log(`[mcp-server] recovered unused port for settled job ${job.jobId}`);
+  }
+}
+
+await recoverMarkedPorts();
 
 const getJob = (jobId) => {
   const job = jobs[jobId];

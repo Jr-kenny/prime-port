@@ -4,12 +4,14 @@ import {
   activeA2AContext,
   assignCandidateAlias,
   buildA2ASendArgs,
+  buildA2ASessionCreateArgs,
   ensureCandidateAliases,
   findCandidate,
   formatCandidateRelay,
   leaseOutboxItems,
   parseA2ASessionKey,
   pruneDeliveredCandidateMessages,
+  selectA2AConversationTask,
 } from "./core.mjs";
 
 test("OKX session keys separate the local and buyer agent ids", () => {
@@ -42,6 +44,35 @@ test("outbound A2A messages route as Prime Port to the buyer", () => {
     "--message", "Candidate C1 replied",
     "--json",
   ]);
+
+  assert.deepEqual(buildA2ASessionCreateArgs({
+    conversationJobId: "market-42",
+    buyerAgentId: "buyer-17",
+    localAgentId: "5982",
+  }), [
+    "session", "create",
+    "--job-id", "market-42",
+    "--my-agent-id", "5982",
+    "--to-agent-id", "buyer-17",
+    "--json",
+  ]);
+});
+
+test("a missing local session can be rebuilt from the buyer's active OKX task", () => {
+  const tasks = [
+    { jobId: "wrong-provider", myAgentId: "6592", counterpartyAgentId: "5941", myRole: "asp", status: "created" },
+    { jobId: "terminal", myAgentId: "5982", counterpartyAgentId: "5941", myRole: "asp", status: "complete" },
+    { jobId: "latest-active", myAgentId: "5982", counterpartyAgentId: "5941", myRole: "asp", status: "created" },
+    { jobId: "older-active", myAgentId: "5982", counterpartyAgentId: "5941", myRole: "asp", status: "accepted" },
+  ];
+  assert.equal(selectA2AConversationTask(tasks, {
+    buyerAgentId: "5941",
+    localAgentId: "5982",
+  })?.jobId, "latest-active");
+  assert.equal(selectA2AConversationTask(tasks, {
+    buyerAgentId: "1791",
+    localAgentId: "5982",
+  }), null);
 });
 
 test("candidate aliases are stable and duplicates are repaired", () => {
