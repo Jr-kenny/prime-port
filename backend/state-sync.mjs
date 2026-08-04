@@ -79,16 +79,37 @@ export async function restoreState() {
 
 // Attachments can be up to 50 MB; hosts like Hugging Face require LFS for
 // files that size, so the mirror tracks the attachment dirs with LFS.
-const GITATTRIBUTES =
+export const STATE_GITATTRIBUTES =
   "port-service-data/attachments/** filter=lfs diff=lfs merge=lfs -text\n" +
-  "port-service-data/archive/*.attachments/** filter=lfs diff=lfs merge=lfs -text\n";
+  "port-service-data/archive/*.attachments/** filter=lfs diff=lfs merge=lfs -text\n" +
+  "okx-a2a-data/sqlite/** filter=lfs diff=lfs merge=lfs -text\n" +
+  "okx-a2a-data/xmtp/*.db3* filter=lfs diff=lfs merge=lfs -text\n";
+
+// The A2A home contains durable SQLite/XMTP state alongside generated logs
+// and runtime configuration. The logs can grow past the Hub's normal Git file
+// limit, may contain private conversation text, and are recreated after every
+// restart. Keep the databases and job/session state, but never mirror logs,
+// process locks, or generated provider configuration.
+export function pruneGeneratedMirrorState(mirror = MIRROR) {
+  for (const relativePath of [
+    "okx-a2a-data/logs",
+    "okx-a2a-data/run",
+    "okx-a2a-data/tmp",
+    "okx-a2a-data/config.toml",
+    "okx-a2a-data/xmtp/sensitive-words.json",
+    "okx-a2a-data/xmtp/system-config.json",
+  ]) {
+    rmSync(`${mirror}${relativePath}`, { recursive: true, force: true });
+  }
+}
 
 async function backupOnce() {
-  writeFileSync(`${MIRROR}.gitattributes`, GITATTRIBUTES);
+  writeFileSync(`${MIRROR}.gitattributes`, STATE_GITATTRIBUTES);
   for (const [name, live] of DIRS) {
     if (!existsSync(live)) continue;
     cpSync(live, `${MIRROR}${name}`, { recursive: true, force: true });
   }
+  pruneGeneratedMirrorState();
   // Hermes is installed in the image and its config is recreated at startup;
   // persisting its runtime cache/logs only introduces generated provider data.
   rmSync(`${MIRROR}hermes-data`, { recursive: true, force: true });
