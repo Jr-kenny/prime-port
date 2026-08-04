@@ -2,13 +2,13 @@
 
 **AI agents hire real humans for the jobs agents can't do, and for once the agent gets a voice instead of a post button.**
 
-An agent pays through OKX's AI Task Marketplace, gets a **port** (a live, private conversation endpoint it holds on its own power), and negotiates directly with the freelancers who claim the job. It clarifies, pushes back on price, picks who it hires, exactly like a human client would. Prime Port is the vortex between the two markets. Prime Port never takes custody of a wage outside its escrow rules, and disputed work is judged by GenLayer rather than by our application server.
+An agent pays through OKX's AI Task Marketplace and stays in its existing conversation with Prime Port Connect. Prime Port opens the human job, keeps every freelancer in a separate private channel, and presents them to the buyer as stable candidates such as C1 and C2. The buyer can compare, negotiate, shortlist, hire, review, and settle without installing XMTP or building another endpoint. Prime Port never takes custody of a wage outside its escrow rules, and disputed work is judged by GenLayer rather than by our application server.
 
 ## Why this exists
 
 Everyone building "agents that hire humans" hands the agent a form: post a task, wait, accept or reject. No voice, no negotiation, no back-and-forth. The agent is a vending machine customer, not a client.
 
-Prime Port gives the agent a seat at the table. The same conversation a human client would have (what exactly do you need, what's it worth, who's the right person) happens for real, in a channel the agent controls end to end. OKX built agent-to-agent commerce; this opens their agents onto the entire human workforce.
+Prime Port gives the agent a seat at the table. The same conversation a human client would have (what exactly do you need, what's it worth, who's the right person) happens inside the OKX chat it already knows how to use. Behind that one buyer-facing conversation, every freelancer has a private XMTP lane. OKX built agent-to-agent commerce, and this opens their agents onto the entire human workforce.
 
 In plain terms: other platforms give a robot a "post job" button and that's it. We give the robot the phone line, so it can actually talk the job through and strike the deal itself.
 
@@ -26,22 +26,22 @@ Two marketplaces, one thing bridging them:
                     \                /
                      \              /
                       ══ THE PORT ══
-             a fresh XMTP identity minted per job
-             the agent holds access and speaks first person
-             each freelancer gets their own private channel
-             archived and scrapped after settlement
+          one ready-made OKX buyer conversation
+          stable candidate aliases C1, C2, and so on
+          separate private XMTP channel per freelancer
+          deterministic routing, then signed settlement
 ```
 
 - **The OKX side** is the storefront. Prime Port registers one public x402 service on the OKX AI Task Marketplace: publish a human job and open its port.
 - **The human side** is ours: the job board, the claim flow, embedded wallets so freelancers never touch crypto plumbing, and the chat.
-- **The port** is the product. The negotiated wage is handled internally by a small X Layer escrow, with GenLayer called only if either party opens a dispute.
+- **The port** is the product. Buyers use it through their existing OKX conversation. Direct MCP and XMTP controls remain advanced compatibility paths. The negotiated wage is handled internally by a small X Layer escrow, with GenLayer called only if either party opens a dispute.
 
 ### The lifecycle
 
 1. **Publish.** The agent pays the public `Publish a human job` x402 endpoint. That pays for the listing and mints the port, independent of whether any hire ever happens.
-2. **The port opens.** A fresh XMTP identity is minted for this one job. The agent gets an installation on that inbox (not the root key) and operates it itself from here on.
-3. **Claim.** Freelancers find the job on the site, sign in with email or Google, get an embedded wallet provisioned for them, and each one opens a private, end-to-end channel with the agent. Nobody sees anyone else's negotiation.
-4. **Negotiate.** The agent talks to each candidate directly: clarifies, haggles, plans. Every message is wallet-signed.
+2. **The port opens.** Prime Port Connect opens or reuses the buyer's OKX A2A conversation automatically. The buyer receives a ready message instead of an inbox identifier or SDK instructions.
+3. **Claim.** Freelancers find the job on the site, sign in with email or Google, get an embedded wallet provisioned for them, and each one opens a private XMTP channel with the job port. Nobody sees anyone else's negotiation.
+4. **Negotiate.** Prime Port assigns stable IDs such as C1 and C2, relays each lane into the one buyer conversation, and routes buyer replies only when an exact candidate ID is supplied.
 5. **Hire authorization.** The agent commits to one candidate. The terms, payout address, transcript hash, exact escrow deployment, token, amount, deadline, and both wallets are bound into one authorization. Buyer and freelancer sign the same message.
 6. **Fund.** The buyer approves exactly the negotiated USD₮0 amount and funds `PrimePortEscrow` on X Layer. Only the confirmed `EscrowFunded` event changes the job to **escrow locked** and tells the freelancer to start.
 7. **Review and revise.** The freelancer submits through the port (URLs, files, media, tx hashes). The buyer can request changes repeatedly. An accepted revision becomes release-ready; revisions do not touch the contract.
@@ -63,7 +63,7 @@ Sequencing is enforced twice: Prime Port will not create a hire without a paid p
 ## The trust model
 
 - **The happy path needs no judge.** Buyer approval releases; voluntary cancellation refunds. GenLayer is a fire escape for actual disagreement or silence.
-- **We can't forge conversations.** Freelancer keys are MPC embedded wallets we can't use without the user's session, and XMTP has no protocol-level message editing. The transcript hash is committed at hire.
+- **We can't forge freelancer messages.** Freelancer keys are MPC embedded wallets we can't use without the user's session, and XMTP has no protocol-level message editing. The selected transcript hash and exact terms are committed at hire, then both buyer and freelancer sign the same escrow authorization.
 - **The app cannot redirect the pay.** The escrow has no owner or mutable payout route. Its immutable resolver can only apply a dispute split after the job is frozen.
 
 In plain terms: we mint the ports and burn them, and we route the rails. The signed authorization, X Layer contract, and GenLayer verdict decide where the wage goes.

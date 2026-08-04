@@ -115,7 +115,7 @@ function grantSign(jobId, token, message) {
   return account.signMessage({ message });
 }
 
-// Evidence messages (#18): a remote attachment is a small envelope — URL of
+// Evidence messages (#18): a remote attachment is a small envelope, the URL of
 // the encrypted payload, the digest that pins those bytes, and the key
 // material to decrypt them. The payload itself lives in our attachment store.
 const isRemoteAttachment = (m) =>
@@ -153,8 +153,16 @@ const contentSha256 = (m) => "0x" + createHash("sha256").update(canonicalContent
 // hand out the channel's plaintext, so the envelope hides nothing extra.
 const messageRow = (m, portInboxId) =>
   typeof m.content === "string"
-    ? { fromPort: m.senderInboxId === portInboxId, kind: "text", content: m.content }
+    ? {
+        messageId: m.id,
+        sentAtNs: String(m.sentAtNs),
+        fromPort: m.senderInboxId === portInboxId,
+        kind: "text",
+        content: m.content,
+      }
     : {
+        messageId: m.id,
+        sentAtNs: String(m.sentAtNs),
         fromPort: m.senderInboxId === portInboxId,
         kind: "attachment",
         filename: m.content.filename ?? "",
@@ -231,7 +239,7 @@ async function archive(jobId, client) {
 // conversation for the first time AFTER the revocation, rebuilding
 // membership from the latest identity state. A client that synced before the
 // revoke keeps the old membership cached and its flush commits nothing
-// (found the hard way; see docs/port-mechanics.md) — and the working
+// (found the hard way; see docs/port-mechanics.md), and the working
 // installation has always synced by scrap time on a real job, because hire
 // reads /channel. Hence the cold scrapper installation minted alongside the
 // port. The working installation is revoked with the rest; the port dies

@@ -1,12 +1,15 @@
 # Prime Port backend
 
 One container runs the XMTP port service, MCP + REST server, distribution
-poster, optional OKX A2A responder, X Layer escrow event watcher, and optional
-GenLayer resolution relayer. `index.mjs` exposes them through one public port.
+poster, optional OKX A2A responder, buyer conversation bridge, X Layer escrow
+event watcher, and optional GenLayer resolution relayer. `index.mjs` exposes
+them through one public port.
 
 `POST /mcp/publish` is the only paid OKX-facing operation. Its x402 payment is
-Prime Port's publication fee. The later negotiated freelancer wage is not a
-second marketplace service: the backend internally produces the dual-signature
+Prime Port's publication fee. The paid result binds the new job to the buyer's
+existing OKX conversation and keeps freelancer channels behind stable candidate
+IDs. The later negotiated freelancer wage is not a second marketplace service:
+the backend internally produces the dual-signature
 authorization and exact `approve` + `fund` transactions for `PrimePortEscrow`.
 
 The freelancer may submit any number of revisions. An accepted revision becomes
@@ -27,7 +30,9 @@ relays that result to X Layer.
 - `RELAYER_TOKEN`: high-entropy secret used for durable relayer submission
   markers.
 - `ENABLE_A2A_RESPONDER=1`, `EXPECTED_OKX_AGENT_ID=5982`: run the public Agent
-  responder after its email session is restored.
+  responder and buyer conversation bridge after its email session is restored.
+- `HERMES_PROVIDER=openrouter`, `HERMES_MODEL=deepseek/deepseek-v4-flash-0731`:
+  pin the buyer chat runtime to the requested OpenRouter model.
 - `ENABLE_MARKETPLACE_WATCHER=0`: the retired shared settlement worker must stay
   disabled for this architecture.
 

@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { restoreState, startBackupLoop } from "./state-sync.mjs";
 import { publicUpstream } from "./public-routing.mjs";
+import { DEFAULT_A2A_MODEL, DEFAULT_A2A_PROVIDER } from "./a2a-model.mjs";
 
 // The public port: APP_PORT if set, else the host-assigned PORT (Render
 // injects one and routes traffic to it), else 7860 (Hugging Face style).
@@ -24,6 +25,7 @@ const isEnabled = (value) => ["1", "true", "yes", "on"].includes(String(value ??
 const runtimeStatus = {
   marketplaceWatcher: "disabled",
   a2aResponder: "disabled",
+  a2aPortBridge: "disabled",
   genlayerRelayer: "disabled",
 };
 const runtimeDetails = {
@@ -40,6 +42,7 @@ const processStartedAt = Date.now();
 const healthStartupGraceMs = Number(process.env.HEALTH_STARTUP_GRACE_MS ?? 300_000);
 let hermesInferenceVerified = false;
 let a2aDaemonProcess;
+let a2aBridgeProcess;
 
 const bytesToMiB = (bytes) => bytes == null ? null : Math.round((bytes / 1024 / 1024) * 10) / 10;
 const readCgroupBytes = (path) => {
@@ -62,6 +65,7 @@ const memoryStatus = () => {
 const serviceReady = () =>
   (!isEnabled(process.env.ENABLE_MARKETPLACE_WATCHER) || runtimeStatus.marketplaceWatcher === "running")
   && (!isEnabled(process.env.ENABLE_A2A_RESPONDER) || runtimeStatus.a2aResponder === "running")
+  && (!isEnabled(process.env.ENABLE_A2A_RESPONDER) || runtimeStatus.a2aPortBridge === "running")
   && (!isEnabled(process.env.ENABLE_GENLAYER_RELAYER) || runtimeStatus.genlayerRelayer === "running");
 
 function redactCommandOutput(value) {
@@ -404,10 +408,39 @@ function scheduleA2ARecycle(env, recycleMs) {
   recycleTimer.unref();
 }
 
+function startA2APortBridge() {
+  if (!isEnabled(process.env.ENABLE_A2A_RESPONDER)) {
+    runtimeStatus.a2aPortBridge = "disabled";
+    return;
+  }
+  if (a2aBridgeProcess && a2aBridgeProcess.exitCode == null) return;
+  const child = spawn(
+    process.execPath,
+    [new URL("./a2a-bridge/worker.mjs", import.meta.url).pathname],
+    {
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        PRIME_PORT_INTERNAL_URL: "http://127.0.0.1:8792",
+      },
+    },
+  );
+  a2aBridgeProcess = child;
+  runtimeStatus.a2aPortBridge = "running";
+  child.on("exit", (code, signal) => {
+    if (a2aBridgeProcess !== child) return;
+    a2aBridgeProcess = undefined;
+    runtimeStatus.a2aPortBridge = "restarting";
+    console.error(`[prime-port] A2A port bridge exited code=${code ?? "null"} signal=${signal ?? "none"}, restarting in 30s`);
+    setTimeout(startA2APortBridge, 30_000).unref();
+  });
+}
+
 async function startA2AResponder() {
   runtimeDetails.a2aResponder.lastAttemptAt = new Date().toISOString();
   if (!isEnabled(process.env.ENABLE_A2A_RESPONDER)) {
     runtimeStatus.a2aResponder = "disabled";
+    runtimeStatus.a2aPortBridge = "disabled";
     console.log("[prime-port] ENABLE_A2A_RESPONDER is off, cloud A2A responder disabled");
     return;
   }
@@ -419,10 +452,10 @@ async function startA2AResponder() {
   const taskHome = process.env.OKX_AGENT_TASK_HOME ?? "/app/okx-agent-task";
   const aiWorkspace = process.env.OKX_A2A_AI_CWD ?? "/app/a2a-workspace";
   const hermesHome = process.env.HERMES_HOME ?? "/app/hermes";
-  const hermesProvider = process.env.HERMES_PROVIDER ?? "gemini";
+  const hermesProvider = process.env.HERMES_PROVIDER ?? DEFAULT_A2A_PROVIDER;
   const hermesModel = process.env.HERMES_MODEL
     ?? process.env.HERMES_NVIDIA_MODEL
-    ?? "gemini-3.1-flash-lite";
+    ?? DEFAULT_A2A_MODEL;
   const hermesReasoningEffort = process.env.HERMES_REASONING_EFFORT ?? "medium";
   const providerKeyPresent = {
     gemini: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY),
@@ -543,6 +576,7 @@ async function startA2AResponder() {
   }
 
   runtimeStatus.a2aResponder = "running";
+  startA2APortBridge();
   runtimeDetails.a2aResponder.lastReadyAt = new Date().toISOString();
   runtimeDetails.a2aResponder.lastFailure = null;
   // App Runner already supervises the container. Recycling only the nested

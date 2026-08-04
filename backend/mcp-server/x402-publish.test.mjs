@@ -106,6 +106,8 @@ test("paid publish advertises the exact 1 USDt0 payment and its POST input schem
   assert.match(unpaidBody.outputSchema.input.deadline.description, /future/);
   assert.match(unpaidBody.outputSchema.input.agentWallet.description, /x402 payer/);
   assert.equal(unpaidBody.outputSchema.input.price.required, false);
+  assert.equal(unpaidBody.outputSchema.input.conversationJobId.required, false);
+  assert.match(unpaidBody.outputSchema.input.conversationJobId.description, /existing conversation/);
 
   const encoded = response.headers.get("payment-required");
   assert.ok(encoded, "PAYMENT-REQUIRED header is present");
@@ -168,12 +170,19 @@ test("paid publish advertises the exact 1 USDt0 payment and its POST input schem
       deadline: 1999999999,
       agentId: "5941",
       agentWallet: payer,
+      conversationJobId: "okx-conversation-5941",
     }),
   });
   assert.equal(paid.status, 200);
   assert.ok(paid.headers.get("payment-response"));
   const paidBody = await paid.json();
   assert.match(paidBody.jobId, /^job-/);
+  assert.equal(paidBody.port, undefined);
+  assert.equal(paidBody.mcpEndpoint, undefined);
+  assert.equal(paidBody.conversation.interface, "OKX A2A");
+  assert.equal(paidBody.conversation.primePortAgentId, "5982");
+  assert.equal(paidBody.conversation.jobId, "okx-conversation-5941");
+  assert.match(paidBody.next, /existing OKX conversation/);
 
   const jobsResponse = await fetch(`${endpoint}/jobs`);
   assert.equal(jobsResponse.status, 200);
@@ -183,4 +192,6 @@ test("paid publish advertises the exact 1 USDt0 payment and its POST input schem
   const storedJobs = JSON.parse(readFileSync(join(dataDir, "jobs.json"), "utf8"));
   assert.ok(storedJobs[paidBody.jobId].publishTask.paidAt, "paidAt is written after settlement");
   assert.equal(storedJobs[paidBody.jobId].publishTask.settlement.transaction, `0x${"ab".repeat(32)}`);
+  assert.equal(storedJobs[paidBody.jobId].a2a.enabled, true);
+  assert.equal(storedJobs[paidBody.jobId].a2a.conversationJobId, "okx-conversation-5941");
 });

@@ -39,6 +39,11 @@ const fakePort = createServer(async (req, res) => {
   if (req.method === "GET" && /^\/ports\/[^/]+\/channel$/.test(path)) {
     return json(res, 200, { messages: [], transcriptHash: `0x${"11".repeat(32)}` });
   }
+  if (req.method === "GET" && /^\/ports\/[^/]+\/conversations$/.test(path)) {
+    return json(res, 200, {
+      conversations: [{ peerInboxId: "freelancer-inbox-test", messageCount: 0, attachmentCount: 0, lastMessage: null }],
+    });
+  }
   if (req.method === "POST" && /^\/ports\/[^/]+\/messages$/.test(path)) {
     portMessages.push(body);
     return json(res, 200, { sent: true });
@@ -156,10 +161,52 @@ try {
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
   });
   assert.equal(anonymousMcp.status, 401);
-  await rest("POST", `/jobs/${jobId}/claims`, {
+  const claimed = await rest("POST", `/jobs/${jobId}/claims`, {
     payoutAddress: freelancer.address,
     name: "Test Freelancer",
   }, freelancerHeaders);
+  assert.equal(claimed.candidateId, "C1");
+
+  const leased = await rest("POST", "/internal/a2a/outbox/lease", { limit: 10 }, internalHeaders);
+  assert.deepEqual(new Set(leased.items.map((item) => item.eventId)), new Set([
+    `welcome:v1:${jobId}`,
+    "candidate-joined:C1",
+  ]));
+  for (const item of leased.items) {
+    await rest("POST", "/internal/a2a/outbox/ack", {
+      eventId: item.eventId,
+      leaseToken: item.leaseToken,
+      success: true,
+      messageId: `a2a-${item.eventId}`,
+      resolvedA2AJobId: publishTask,
+    }, internalHeaders);
+  }
+
+  const a2aAction = (action, args = {}) => rest("POST", "/internal/a2a/action", {
+    conversationJobId: publishTask,
+    buyerAgentId: "buyer-42",
+    action,
+    args,
+  }, internalHeaders);
+  const conversationContext = await a2aAction("context");
+  assert.equal(conversationContext.candidates[0].candidateId, "C1");
+  assert.equal(conversationContext.candidates[0].inboxId, undefined);
+  await a2aAction("shortlist", { candidateIds: ["C1"] });
+
+  const cancellableDeadline = Math.floor(Date.now() / 1000) + 3600;
+  const cancellable = await a2aAction("hire", {
+    candidateId: "C1",
+    price: "12.5",
+    deadline: cancellableDeadline,
+  });
+  await a2aAction("confirm-hire", {
+    signature: await buyer.signMessage({ message: cancellable.signThisExactly }),
+  });
+  const cancelled = await a2aAction("cancel-hire");
+  assert.equal(cancelled.status, "open");
+  assert.match(cancelled.safety, /had not countersigned/);
+  assert.equal((await a2aAction("context")).candidates[0].selectionStatus, "shortlisted");
+  assert.match(portMessages[0].content, /^\[prime-port:hire-cancelled\]/);
 
   const hireDeadline = Math.floor(Date.now() / 1000) + 3600;
   const hire = await call("hire", {
@@ -176,6 +223,18 @@ try {
   assert.equal(committed.fundingRequest.amountUnits, "12500000");
   assert.match(committed.fundingRequest.approval.data, /^0x/);
   assert.match(committed.fundingRequest.funding.data, /^0x/);
+  const unsafeCancel = await fetch(`${base}/internal/a2a/action`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...internalHeaders },
+    body: JSON.stringify({
+      conversationJobId: publishTask,
+      buyerAgentId: "buyer-42",
+      action: "cancel-hire",
+      args: {},
+    }),
+  });
+  assert.equal(unsafeCancel.status, 400);
+  assert.match((await unsafeCancel.json()).error, /both signatures already exist/);
 
   await rest("POST", "/internal/escrow-event", {
     eventName: "EscrowFunded",
@@ -191,8 +250,8 @@ try {
       deadline: String(hireDeadline),
     },
   });
-  assert.match(portMessages[0].content, /^\[prime-port:escrow-funding-ready\]/);
-  assert.match(portMessages[1].content, /^\[prime-port:escrow-locked\]/);
+  assert.match(portMessages[1].content, /^\[prime-port:escrow-funding-ready\]/);
+  assert.match(portMessages[2].content, /^\[prime-port:escrow-locked\]/);
 
   const revision1 = await rest("POST", `/jobs/${jobId}/submissions`, {
     note: "First version.",
@@ -211,6 +270,9 @@ try {
     submissionId: revision2.submission.submissionId,
     decision: "accept",
   });
+  const deliveryContext = await a2aAction("context");
+  assert.equal(deliveryContext.submissions[0].candidateId, "C1");
+  assert.equal(deliveryContext.submissions[0].freelancerInboxId, undefined);
   const approval = await call("approve", { jobId, note: "Approved final revision." });
   assert.equal(approval.transaction.to, escrowAddress);
   assert.match(approval.transaction.data, /^0x/);
@@ -231,7 +293,7 @@ try {
   assert.equal(job.settlement.status, "released");
   assert.equal(job.settlement.finalSubmissionId, revision2.submission.submissionId);
   assert.deepEqual(job.submissions.map((submission) => submission.status), ["revision-requested", "accepted"]);
-  assert.equal(portMessages.length, 5);
+  assert.equal(portMessages.length, 6);
   assert.match(portMessages.at(-1).content, /^\[prime-port:escrow-released\]/);
 
   const disputedPublish = await call("publish", {

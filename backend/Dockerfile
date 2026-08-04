@@ -2,7 +2,7 @@
 # single public port (index.mjs). Built for Hugging Face Spaces (docker sdk,
 # app_port 7860) but nothing here is HF-specific.
 #
-# Build context is backend/ — the commitment module and both services ride in.
+# Build context is backend/. The commitment module and both services ride in.
 FROM node:22-bookworm-slim
 
 # git is for state-sync (mirror repo push/pull); ca-certificates for TLS;
@@ -76,8 +76,10 @@ COPY genlayer-relayer/relayer.mjs genlayer-relayer/core.mjs genlayer-relayer/
 COPY distribution/poster.mjs distribution/select.mjs distribution/
 COPY distribution/channels/oauth1.mjs distribution/channels/telegram.mjs distribution/channels/x.mjs distribution/channels/
 COPY marketplace-watcher/watcher.mjs marketplace-watcher/wage-release.mjs marketplace-watcher/task-routing.mjs marketplace-watcher/
+COPY a2a-bridge/core.mjs a2a-bridge/cli.mjs a2a-bridge/worker.mjs a2a-bridge/
+COPY a2a-workspace/AGENTS.md a2a-workspace/
 COPY payout/register-at-hire.mjs payout/
-COPY index.mjs public-routing.mjs state-sync.mjs listing-price.mjs brief-policy.mjs settlement-routing.mjs ./
+COPY index.mjs public-routing.mjs state-sync.mjs listing-price.mjs brief-policy.mjs settlement-routing.mjs a2a-model.mjs ./
 
 # Spaces runs the container unprivileged; everything the process writes
 # (data dirs, state mirror) lives under /app, so hand it to the node user.

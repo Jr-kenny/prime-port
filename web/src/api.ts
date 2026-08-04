@@ -14,7 +14,15 @@ export type PublicJob = {
   agent?: { agentId: string; wallet: string };
   // Anonymous listings receive an empty claims array and no port. A signed
   // freelancer sees only their own claim and job-scoped private fields.
-  claims: { inboxId: string; wallet: string; payoutAddress: string; name: string; claimedAt: number }[];
+  claims: {
+    candidateId: string;
+    selectionStatus: "available" | "shortlisted" | "selected" | "hired" | "not-selected";
+    inboxId: string;
+    wallet: string;
+    payoutAddress: string;
+    name: string;
+    claimedAt: number;
+  }[];
   port?: { inboxId: string };
   pendingHire?: {
     hash: string;
@@ -124,7 +132,7 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
 export const listJobs = () =>
   api<PublicJob[]>("GET", "/jobs").then((jobs) => jobs.filter((job) => !job.publishTask || Boolean(job.publishTask.paidAt)));
 export const claimJob = (jobId: string, claim: { inboxId: string; wallet: string; payoutAddress?: string; name: string }) =>
-  api<{ claimed: boolean; portInboxId: string }>("POST", `/jobs/${jobId}/claims`, { payoutAddress: claim.payoutAddress, name: claim.name });
+  api<{ claimed: boolean; candidateId: string; portInboxId: string }>("POST", `/jobs/${jobId}/claims`, { payoutAddress: claim.payoutAddress, name: claim.name });
 export type EscrowFundingRequest = {
   version: 1;
   network: string;

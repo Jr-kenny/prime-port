@@ -1,4 +1,4 @@
-# Prime Port — OKX ASP Submission
+# Prime Port - OKX ASP Submission
 
 Drafts for the ASP participation form. Everything below is ready to paste. The
 one thing to add before you submit is the demo video and its X link (marked
@@ -14,13 +14,15 @@ doing research, running a real-world errand. Prime Port is where an agent goes
 to get those done by actual people, without ever leaving its own workflow.
 
 How it works: an agent posts a job and Prime Port fans it out to a human
-freelancer marketplace and across social channels. The agent gets a private
-port, a room where every freelancer who claims the job meets it one on one.
-There the agent clarifies the spec, negotiates, and picks the person it wants.
+freelancer marketplace and across social channels. The same OKX conversation
+with Prime Port Connect becomes the buyer-facing port. Every freelancer still
+gets a separate private lane, but the buyer only sees stable names like C1 and
+C2. There the agent clarifies the spec, negotiates, and picks the person it
+wants without installing XMTP or building another endpoint.
 
-One flat fee covers all of it: the fan-out, the port, and the key to run it. The
-deliverable is the port itself, ready in minutes and complete on delivery
-whether or not the agent ends up hiring anyone. When it does hire, both parties
+One flat fee covers all of it: the fan-out and the ready conversation. The
+deliverable is a published job plus a working buyer inbox, ready immediately
+and complete on delivery whether or not the agent ends up hiring anyone. When it does hire, both parties
 sign the exact terms and the wage is locked in a small X Layer escrow. Buyer
 approval pays the signed freelancer address, voluntary cancellation refunds the
 buyer, and unresolved disagreements go to GenLayer. Prime Port takes no wage cut.
@@ -30,7 +32,7 @@ the humans who do.
 
 Prime Port exposes one public paid service:
 - **Publish a human job**: the x402 endpoint posts the job, mints the private
-  port, and returns access to the buyer Agent.
+  port, and binds it to the buyer Agent's existing OKX conversation.
 
 The negotiated wage is not a second advertised service. After both parties
 sign the hire authorization, Prime Port internally prepares the exact X Layer
@@ -43,9 +45,11 @@ result settles the X Layer escrow.
 
 ## ASP Type
 
-The public paid operation is **A2MCP/x402** on Prime Port Connect **#5982**.
-All post-negotiation wage actions are internal orchestration behind that one
-service; there is no second marketplace listing.
+The publication trigger is **A2MCP/x402** on Prime Port Connect **#5982**. Its
+clear result is the published job and a ready buyer conversation. Prime Port
+Connect then handles the multi-round work over OKX A2A. All post-negotiation
+wage actions are internal orchestration behind that flow, so there is no second
+paid endpoint for the buyer to discover or assemble.
 
 ---
 
@@ -71,9 +75,9 @@ the URL of that post into the form field.
 >
 > and it never does the job itself. it just brings you the humans who do.
 >
-> built for @okx's agent marketplace as one A2MCP/x402 service with the
-> negotiated hire and escrow orchestrated internally. 90 second demo of the
-> whole run below 👇
+> built for @okx's agent marketplace. the paid call posts the job, then the
+> whole conversation stays with Prime Port Connect on OKX while the hire and
+> escrow are handled behind it. 90 second demo of the whole run below 👇
 >
 > [attach demo video]
 
@@ -89,8 +93,9 @@ the URL of that post into the form field.
 > freelancer on approval. we never do the work ourselves, we just connect you to the
 > people who will.
 >
-> built for @okx's agent marketplace as one A2MCP/x402 service, with the
-> negotiated hire and escrow handled internally. here's a 90s demo 👇
+> built for @okx's agent marketplace. the paid call opens the job and the
+> buyer stays in the same Prime Port Connect conversation through selection,
+> hire and escrow. here's a 90s demo 👇
 >
 > [attach demo video]
 

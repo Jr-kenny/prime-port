@@ -1,18 +1,18 @@
-# PRIME PORT — BRIEF v3
+# PRIME PORT - BRIEF v4
 ### OKX.AI Genesis Hackathon | Deadline: July 17, 2026 | Team of 4
-### (supersedes "agnet -freelancer-idea" — architecture changed after verifying the OKX AI Task Marketplace)
+### (supersedes "agnet -freelancer-idea", architecture changed after verifying the OKX AI Task Marketplace)
 
 ---
 
 ## THE ONE-LINER
 
-AI agents hire real humans for jobs agents can't do. The agent buys one public Prime Port service through OKX, gets a **port** it controls, and negotiates directly with freelancers. A dual-signed X Layer escrow protects the wage; GenLayer judges only actual disputes.
+AI agents hire real humans for jobs agents can't do. The agent buys one public Prime Port service through OKX and stays in its existing conversation with Prime Port Connect. Behind that chat, each freelancer has a private lane. A dual-signed X Layer escrow protects the wage; GenLayer judges only actual disputes.
 
 ## THE PITCH
 
 > Everybody is building agents that hire agents. Quest platforms let agents post tasks for humans, but the agent gets a post button and nothing else: no voice, no negotiation, no push-back. No power is given to the agent.
 >
-> Prime Port gives the agent a seat at the table. It clarifies, negotiates, pushes back, and picks who it hires, exactly like a human client, through a port it holds on its own power. OKX built agent-to-agent commerce. We give their agents access to the entire human workforce.
+> Prime Port gives the agent a seat at the table. It clarifies, negotiates, pushes back, and picks who it hires, exactly like a human client, through the OKX conversation it already knows. OKX built agent-to-agent commerce. We give their agents access to the entire human workforce.
 
 **"No power is given to the agent" is the answer to every quest/bounty comparison. "Directory vs dialogue" is the answer to RentAHuman.**
 
@@ -25,19 +25,20 @@ AI agents hire real humans for jobs agents can't do. The agent buys one public P
  agent-facing storefront              human-facing marketplace
  ─────────────────────────           ─────────────────────────
  agent finds Prime Port ASP    ──►    job page on our site
- one x402 publication service         auto-post to X / Telegram
+ x402 publication trigger             auto-post to X / Telegram
+ existing OKX A2A conversation        private freelancer channels
                                       freelancers claim (email login,
                                       embedded wallet, no crypto UX)
                     \                /
                      \              /
                       ══ THE PORT ══
-             fresh XMTP identity minted per job
-             agent holds access, speaks first person
-             each freelancer chats in their own private channel
-             scrapped after settlement
+             buyer sees one ready OKX conversation
+             freelancers appear as C1, C2, and so on
+             exact candidate routing into private XMTP lanes
+             signed hire, escrow, review, then scrap
 ```
 
-- **Layer 1 (agent side)**: Prime Port is a registered ASP on the OKX AI Task Marketplace (X Layer). The storefront exposes one x402 publication service.
+- **Layer 1 (agent side)**: Prime Port Connect #5982 receives the standardized x402 publication call and continues the multi-round work in the buyer's existing OKX A2A conversation.
 - **Layer 2 (human side)**: entirely ours. Job pages, social fan-out, claim flow, embedded wallets, the freelancer chat UI.
 - **The port** connects the two. Internal orchestration handles the later wage escrow; it is not a second marketplace listing.
 
@@ -45,11 +46,11 @@ AI agents hire real humans for jobs agents can't do. The agent buys one public P
 
 ## FULL LIFECYCLE (all confirmed against the live protocol docs / CLI)
 
-1. **Agent engages Prime Port** through the public paid MCP endpoint. Its flat x402 fee pays for fan-out, the port, and the key, independent of whether a hire ever happens.
-2. **We mint the port**: a fresh XMTP identity for this job. The agent gets access to it (an XMTP installation on the port inbox, NOT the root key) and operates it on its own power from here.
+1. **Agent engages Prime Port** through the public paid MCP endpoint. Its flat x402 fee pays for fan-out and the ready conversation, independent of whether a hire ever happens.
+2. **We mint the port**: a fresh XMTP identity for this job. Prime Port binds it to the buyer's existing OKX conversation and sends the ready message there. The buyer does not install XMTP or receive a raw inbox ID.
 3. **Auto-distribution**: job page renders on our site, fan-out to X + Telegram. Socials are adverts only; claiming happens on our site.
-4. **Freelancers claim**: email/Google sign-in, embedded wallet provisioned (MPC, e.g. Privy — we can NOT sign for them), each claimer gets a private E2E channel with the agent inside the port. Nobody sees anyone else's negotiation.
-5. **Negotiation**: agent talks to every candidate directly. Clarifies, haggles, plans. All messages wallet-signed.
+4. **Freelancers claim**: email/Google sign-in, embedded wallet provisioned, each claimer gets a private XMTP channel inside the port. Nobody sees anyone else's negotiation.
+5. **Negotiation**: Prime Port assigns stable IDs such as C1 and C2. Candidate messages land in the buyer conversation with their job and candidate IDs. Buyer replies only route through an exact candidate ID.
 6. **Hire authorization.** Agent calls `hire(candidate)`. Freelancer confirms payout address. The terms and escrow fields are dual-signed. The buyer approves and funds the exact USD₮0 amount in `PrimePortEscrow`; only the confirmed event means **escrow locked**.
 7. **Work + review loop**: freelancer submits evidence through the port. The buyer can request specific revisions repeatedly. Only an accepted revision becomes release-ready.
 8. **Settlement**:
@@ -63,14 +64,14 @@ AI agents hire real humans for jobs agents can't do. The agent buys one public P
 
 ## PAYMENT MODEL (two stages, one public service)
 
-The storefront advertises only the paid port endpoint. The negotiated wage is an internal, post-hire X Layer escrow action, so an OKX discovery test sees one independently correct public service.
+The storefront advertises the standardized paid publication endpoint. Its clear result is a published job plus a ready OKX conversation. The negotiated wage is an internal, post-hire X Layer escrow action.
 
 1. **The public x402 purchase (our service fee).** Flat and priced before any human is involved. Its delivery is the job fan-out plus the private port.
 2. **The internal wage escrow (the freelancer's money).** Created only after `hire()` at the negotiated price. Both wallets sign the commitment, payout, token, amount, deadline, chain, and contract before funding.
 
 Sequencing is enforced by Prime Port and the contract: the hire flow requires a paid port, and `fund` requires two matching signatures. The review loop stays off-chain so ordinary revision requests do not become contract disputes.
 
-**Listing architecture**: Prime Port Connect #5982 exposes only `Publish a human job`. Escrow and dispute steps are internal orchestration behind that service.
+**Service architecture**: `Publish a human job` is the paid trigger. Prime Port Connect #5982 is the buyer-facing conversation. Escrow and dispute steps are guarded internal actions behind that conversation.
 
 In everyday terms: the agent pays us a small posting fee up front, like paying a job board to run an ad. The wage is separate and sits in a narrow X Layer contract. Happy-path approval pays the worker; cancellation refunds the buyer; disagreement invokes GenLayer.
 
@@ -81,7 +82,7 @@ In everyday terms: the agent pays us a small posting fee up front, like paying a
 - **Happy path needs no judge.** Satisfaction releases and voluntary cancellation refunds. The court is a fire escape, not a feature.
 - **The rare tie** (agent rejects, freelancer insists) uses a content-addressed evidence bundle and GenLayer intelligent contract verdict.
 - **Transcripts can't be gamed**: XMTP has no message editing at protocol level; deletes never reach the counterparty's signed copy; and the transcript hash is committed at hire. XMTP mainnet expires messages (~6 months), so we archive at settlement, never rely on the network as storage.
-- **We can't forge conversations**: freelancer keys are MPC embedded wallets we cannot use without the user's session.
+- **We can't forge freelancer messages**: freelancer keys are MPC embedded wallets we cannot use without the user's session. The selected transcript and exact terms are committed before both parties sign the escrow authorization.
 - **The app cannot redirect the pay**: `PrimePortEscrow` has no owner, mutable payout, upgrade, or arbitrary withdrawal.
 - **The resolver is narrow**: it can only apply a split after a party has frozen a funded job in `Disputed`; it cannot alter normal funded jobs.
 
@@ -99,7 +100,7 @@ Rule: build the evidence pipe to carry ANY media from day one. Attempt verificat
 
 ---
 
-## TEAM LANES (v2 — escrow lane dissolved into platform integration)
+## TEAM LANES (v2, escrow lane dissolved into platform integration)
 
 | Lane | Owner | Deliverable |
 |---|---|---|
@@ -125,7 +126,7 @@ Load-bearing Day 1 spec: **the port access credential + the hire commitment obje
 
 ## CONFIRMED FACTS (don't re-litigate these)
 
-- OKX advised that dependent steps should be combined into a single listed service with orchestration handled internally.
+- OKX documents A2MCP for standardized calls with a clear result and A2A for negotiated multi-round work. Prime Port uses the paid call as the publication trigger and the existing A2A conversation as the buyer interface.
 - Prime Port therefore uses OKX x402 for the public publication purchase and its own narrow X Layer contract for the post-negotiation wage.
 - XMTP: no protocol-level message editing; per-inbox installations are revocable (this is the port access mechanism); mainnet message expiry ~6 months (archive at settlement).
 - GenLayer supplies the dispute judge; the finalized result is relayed to X Layer and bound to the same evidence hash.
@@ -133,13 +134,13 @@ Load-bearing Day 1 spec: **the port access credential + the hire commitment obje
 
 ## OPEN ITEMS
 
-- [x] Keep one public identity and one public service — Prime Port Connect #5982
+- [x] Keep one public identity and one public service, Prime Port Connect #5982
 - [ ] Fill the three empty lanes
-- [ ] Verify agent-side UX for holding a port installation (how an OKX-side agent runs an XMTP client against our inbox — needs a spike)
+- [x] Direct port installation verified as an optional compatibility path. The default buyer experience no longer requires it.
 - [x] New `PrimePortEscrow` and GenLayer judge implemented and locally tested
 - [ ] Deploy the judge, resolver, and escrow; then run a tiny mainnet wage test
 - [ ] Pick embedded wallet provider (Privy vs Web3Auth vs Coinbase)
-- [ ] ASP listing copy on the OKX marketplace (this is the storefront — treat it like the landing page)
+- [ ] ASP listing copy on the OKX marketplace (this is the storefront, treat it like the landing page)
 
 ## SCOPE FENCES (still standing)
 
@@ -153,7 +154,7 @@ Load-bearing Day 1 spec: **the port access credential + the hire commitment obje
 ## IF WE ONLY REMEMBER THREE THINGS
 
 1. **The port is the product.** OKX is the storefront, humans are the supply, the port is why either side shows up.
-2. **No power is given to the agent** anywhere else. Here it holds the key card.
+2. **No power is given to the agent** anywhere else. Here it gets the full conversation without building the phone line first.
 3. **The happy path stays simple.** Sign, fund, revise, approve. GenLayer appears only for a real dispute.
 
 Now go build the nice thing. 🏝️

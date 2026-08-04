@@ -1,8 +1,8 @@
 // The agent-facing surface of Prime Port: MCP tools over streamable HTTP.
 // Tools: publish, get_offers, negotiate, hire, confirm_hire, approve, plus
-// port_connect for agents that run their own XMTP client (the first-class
-// path). negotiate/get_offers are the server-side fallback for agents that
-// can't.
+// port_connect as an advanced compatibility path. The primary buyer surface
+// is one ready-made OKX A2A conversation that relays deterministic actions
+// into separate freelancer channels behind stable candidate aliases.
 //
 // Two other surfaces share the process:
 //   - REST for the freelancer web app (claim a job, countersign the hire),
@@ -24,6 +24,18 @@ import { z } from "zod";
 import { keccak256, toBytes, verifyMessage } from "viem";
 import { canonicalize, commitmentHash } from "../commitment/commitment.mjs";
 import { clearLegacyPublicationPrice } from "../listing-price.mjs";
+import {
+  assignCandidateAlias,
+  enqueueA2AMessage,
+  ensureA2AState,
+  ensureCandidateAliases,
+  findCandidate,
+  formatCandidateRelay,
+  leaseOutboxItems,
+  pruneDeliveredCandidateMessages,
+  rememberPortMessage,
+  welcomeMessage,
+} from "../a2a-bridge/core.mjs";
 import {
   authorizationMessage,
   buildDisputeRequest,
@@ -218,6 +230,7 @@ const ensureSettlement = (job) => {
 let migratedSettlement = false;
 for (const job of Object.values(jobs)) {
   migratedSettlement = ensureSettlement(job) || migratedSettlement;
+  migratedSettlement = ensureCandidateAliases(job) || migratedSettlement;
   if (job.agentToken) {
     delete job.agentToken;
     migratedSettlement = true;
@@ -311,6 +324,22 @@ const settlementNotice = async (job, kind) => {
     })}`,
   });
   job.settlement[notice.field] = Date.now();
+  if (job.a2a?.enabled) {
+    ensureCandidateAliases(job);
+    const candidate = job.claims.find((claim) => claim.inboxId === hiredInboxId(job));
+    enqueueA2AMessage(job, {
+      eventId: `settlement:${kind}:${job.pendingHire.hash}`,
+      kind: "escrow-update",
+      candidateId: candidate?.candidateId ?? null,
+      message: [
+        `[Prime Port | ${job.jobId} | ${candidate?.candidateId ?? "selected candidate"} | ${job.title}]`,
+        `Escrow update: ${kind}`,
+        `Commitment: ${job.pendingHire.hash}`,
+        `Amount: ${job.pendingHire.commitment.terms.price} ${job.pendingHire.commitment.terms.currency}`,
+        `Confirmed transaction: ${job.settlement?.lastTransactionHash ?? "not confirmed yet"}`,
+      ].join("\n"),
+    });
+  }
   save();
 };
 
@@ -349,6 +378,11 @@ async function applyEscrowEvent(event) {
         || Number(event.args.deadline) !== expected.deadline
       ) throw new Error(`EscrowFunded does not match signed authorization ${commitment}`);
       job.status = "hired";
+      ensureCandidateAliases(job);
+      for (const claim of job.claims) {
+        claim.selectionStatus = claim.inboxId === hiredInboxId(job) ? "hired" : "not-selected";
+        if (claim.selectionStatus === "hired") claim.hiredAt = Date.now();
+      }
       job.settlement.status = "escrow-locked";
       job.settlement.fundedAt = Date.now();
       job.settlement.fundingTransactionHash = event.transactionHash;
@@ -530,6 +564,7 @@ const publishShape = z.object({
   agentWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
   title: z.string().min(8).max(120).refine((title) => !/^(post|publish|help me post|set up)\b/i.test(title), "title must describe the actual freelancer job"),
   marketplaceJobId: z.string().optional(),
+  conversationJobId: z.string().min(1).max(300).optional(),
 });
 const paidPublishShape = publishShape.omit({ marketplaceJobId: true });
 
@@ -551,6 +586,16 @@ async function prepareJob(args) {
     port: { inboxId: port.inboxId, address: port.address, grantToken: port.grantToken },
     claims: [],
     submissions: [],
+    // The paid service opens one ready-made OKX conversation for the buyer.
+    // Freelancer XMTP channels remain hidden behind stable candidate aliases.
+    a2a: {
+      version: 1,
+      enabled: true,
+      buyerAgentId: String(args.agentId),
+      conversationJobId: args.conversationJobId ?? null,
+      outbox: [],
+      seenPortMessageIds: [],
+    },
     // Which social channels this job has been posted to, and when. Written
     // once per channel by POST /jobs/:jobId/posted so a redeploy never
     // re-posts. Lives on the job so it rides the persisted, backed-up state.
@@ -573,6 +618,7 @@ function commitPreparedJob(prepared) {
   const { jobId, job, port } = prepared;
   if (jobs[jobId] && jobs[jobId] !== job) throw new Error(`job ${jobId} already exists`);
   jobs[jobId] ??= job;
+  ensureA2AState(jobs[jobId]);
   save();
   emit("job-created", {
     jobId,
@@ -586,12 +632,288 @@ function commitPreparedJob(prepared) {
 
 function stagePreparedJob(prepared) {
   if (jobs[prepared.jobId]) throw new Error(`job ${prepared.jobId} already exists`);
+  ensureA2AState(prepared.job);
   jobs[prepared.jobId] = prepared.job;
   save();
 }
 
 async function publishJob(args) {
   return commitPreparedJob(await prepareJob(args));
+}
+
+async function offersForJob(job) {
+  ensureCandidateAliases(job);
+  const { conversations } = await portSvc("GET", `/ports/${job.jobId}/conversations`);
+  const offers = [];
+  for (const claim of job.claims) {
+    const { jobsClaimed, jobsCompleted, completionRate, avgStars, reviewCount } = reputation(claim.inboxId);
+    const channel = conversations.find((candidate) => candidate.peerInboxId === claim.inboxId) ?? { messageCount: 0 };
+    const fullChannel = channel.messageCount > 0
+      ? await portSvc("GET", `/ports/${job.jobId}/channel?peer=${encodeURIComponent(claim.inboxId)}`)
+      : { messages: [], transcriptHash: null };
+    offers.push({
+      ...claim,
+      reputation: { jobsClaimed, jobsCompleted, completionRate, avgStars, reviewCount },
+      channel,
+      transcriptHash: fullChannel.transcriptHash,
+      messages: fullChannel.messages,
+      attachments: fullChannel.messages.filter((message) => message.kind === "attachment"),
+    });
+  }
+  return offers;
+}
+
+async function sendCandidateMessage(job, claim, rawMessage) {
+  const message = z.string().trim().min(1).max(8_000).parse(rawMessage);
+  const ongoingStatuses = [
+    "hiring",
+    "awaiting-freelancer-signature",
+    "awaiting-escrow",
+    "hired",
+    "delivered",
+    "delivery-rejected",
+    "disputed",
+  ];
+  if (job.status !== "open") {
+    if (!ongoingStatuses.includes(job.status)) throw new Error(`job is ${job.status}, conversation is closed`);
+    if (claim.inboxId !== hiredInboxId(job)) throw new Error(`only the selected candidate can be messaged while job is ${job.status}`);
+  }
+  requirePaidPort(job, "candidate messaging");
+  markKeyDelivered(job, "okx-a2a-conversation");
+  await portSvc("POST", `/ports/${job.jobId}/messages`, { peerInboxId: claim.inboxId, content: message });
+  const channel = await portSvc("GET", `/ports/${job.jobId}/channel?peer=${encodeURIComponent(claim.inboxId)}`);
+  return { sent: true, candidateId: claim.candidateId, channel: channel.messages };
+}
+
+async function startHire(job, claim, input) {
+  if (job.status !== "open") throw new Error(`job is ${job.status}`);
+  requirePaidPort(job, "hire");
+  requireEscrow(ESCROW);
+  const price = z.string().regex(/^\d+(\.\d{1,6})?$/).parse(input.price);
+  const deadline = z.coerce.number().int().parse(input.deadline);
+  if (deadline <= Math.floor(Date.now() / 1000)) throw new Error("hire deadline must be in the future");
+  const criteria = input.criteria == null
+    ? job.criteria
+    : z.string().trim().min(10).max(8_000).parse(input.criteria);
+  const channel = await portSvc("GET", `/ports/${job.jobId}/channel?peer=${encodeURIComponent(claim.inboxId)}`);
+  const commitment = {
+    version: 2,
+    jobId: job.jobId,
+    port: { inboxId: job.port.inboxId },
+    agent: job.agent,
+    freelancer: { inboxId: claim.inboxId, wallet: claim.wallet, payoutAddress: claim.payoutAddress },
+    terms: { criteria, price, currency: job.currency, deadline },
+    feeBps: job.feeBps,
+    dispute: {
+      system: "GenLayer",
+      evidencePolicy: "If either party opens a dispute, the selected job transcript, submissions, revision feedback, and attachment metadata are disclosed to GenLayer validators for settlement.",
+      outcome: "provider-award-bps",
+    },
+    transcriptHash: channel.transcriptHash,
+    hiredAt: Math.floor(Date.now() / 1000),
+  };
+  const hash = commitmentHash(commitment);
+  job.pendingHire = {
+    commitment,
+    hash,
+    candidateId: claim.candidateId,
+    previousSelectionStatus: claim.selectionStatus ?? "available",
+  };
+  job.pendingHire.escrow = buildEscrowAuthorization(job.pendingHire, ESCROW);
+  job.status = "hiring";
+  claim.selectionStatus = "selected";
+  claim.selectedAt = Date.now();
+  save();
+  emit("hire-prepared", { jobId: job.jobId, candidateId: claim.candidateId, commitmentHash: hash });
+  return {
+    candidateId: claim.candidateId,
+    commitmentHash: hash,
+    commitment,
+    escrowAuthorization: job.pendingHire.escrow,
+    signThisExactly: job.pendingHire.escrow.signThisExactly,
+    next: "The buyer wallet must personal_sign this exact escrow authorization, then submit the signature. No USDT has moved.",
+  };
+}
+
+async function confirmHire(job, signatureInput) {
+  if (job.status !== "hiring" || !job.pendingHire) throw new Error("no hire in progress");
+  const signature = z.string().regex(/^0x[0-9a-fA-F]+$/).parse(signatureInput);
+  const valid = await verifyMessage({
+    address: job.agent.wallet,
+    message: authorizationMessage(job.pendingHire.escrow.authorizationHash),
+    signature,
+  });
+  if (!valid) throw new Error("signature does not recover the agent wallet");
+  job.pendingHire.agentSignature = signature;
+  job.status = "awaiting-freelancer-signature";
+  save();
+  return {
+    ok: true,
+    candidateId: job.pendingHire.candidateId ?? null,
+    waitingOn: "freelancer countersignature in the private candidate lane",
+    then: "After the freelancer countersigns, Prime Port will return the exact X Layer approval and funding transactions. No USDT has moved yet.",
+  };
+}
+
+async function cancelHire(job) {
+  if (job.status === "awaiting-escrow") {
+    throw new Error("both signatures already exist, so this authorization can still be funded until its deadline. Prime Port will not claim an off-chain cancellation is safe");
+  }
+  if (!["hiring", "awaiting-freelancer-signature"].includes(job.status) || !job.pendingHire) {
+    throw new Error("no safely cancellable hire is in progress");
+  }
+  const stage = job.status;
+  const candidateId = job.pendingHire.candidateId
+    ?? job.claims.find((claim) => claim.inboxId === hiredInboxId(job))?.candidateId
+    ?? null;
+  (job.cancelledHires ??= []).push({
+    commitmentHash: job.pendingHire.hash,
+    candidateId,
+    stage,
+    buyerSigned: Boolean(job.pendingHire.agentSignature),
+    cancelledAt: Date.now(),
+  });
+  const selected = job.claims.find((claim) => claim.candidateId === candidateId);
+  if (selected) {
+    selected.selectionStatus = job.pendingHire.previousSelectionStatus ?? "available";
+    delete selected.selectedAt;
+  }
+  delete job.pendingHire;
+  delete job.settlement;
+  job.status = "open";
+  save();
+  emit("hire-cancelled", { jobId: job.jobId, candidateId, stage });
+  if (selected) {
+    try {
+      await portSvc("POST", `/ports/${job.jobId}/messages`, {
+        peerInboxId: selected.inboxId,
+        content: `[prime-port:hire-cancelled]\nThe buyer cancelled the prepared hire before both signatures existed. Negotiation is open again.`,
+      });
+    } catch (error) {
+      console.error(`[mcp-server] ${job.jobId} hire cancelled but candidate notice failed: ${error.message}`);
+    }
+  }
+  return {
+    cancelled: true,
+    candidateId,
+    previousStage: stage,
+    status: job.status,
+    safety: "The freelancer had not countersigned, so the cancelled authorization cannot fund escrow.",
+  };
+}
+
+async function reviewJobSubmission(job, input) {
+  ensureSettlement(job);
+  if (job.status !== "hired") throw new Error(`job is ${job.status}, review requires locked escrow`);
+  const submissionId = z.string().parse(input.submissionId);
+  const decision = z.enum(["request_changes", "accept"]).parse(input.decision);
+  const submission = job.submissions?.find((candidate) => candidate.submissionId === submissionId);
+  if (!submission) throw new Error("unknown submission");
+  if (submission.status !== "awaiting-review") throw new Error(`submission is ${submission.status}`);
+
+  if (decision === "request_changes") {
+    const reason = z.string().trim().min(3).max(2_000).parse(input.feedback);
+    submission.status = "revision-requested";
+    submission.reviewedAt = Date.now();
+    submission.feedback = reason;
+    job.settlement.reviewStatus = "revision-requested";
+    job.settlement.revisionRequestedAt = submission.reviewedAt;
+    await portSvc("POST", `/ports/${job.jobId}/messages`, {
+      peerInboxId: hiredInboxId(job),
+      content: `Changes requested for ${submissionId}: ${reason}`,
+    });
+    save();
+    emit("submission-revision-requested", { jobId: job.jobId, submissionId, commitmentHash: job.pendingHire.hash, feedback: reason });
+    return { ok: true, status: "revision-requested", submissionId, next: "Wait for the freelancer's revised submission in this conversation." };
+  }
+
+  submission.status = "accepted";
+  submission.reviewedAt = Date.now();
+  submission.feedback = input.feedback?.trim() ?? "";
+  job.settlement.reviewStatus = "final-delivery-ready";
+  job.settlement.finalSubmissionId = submissionId;
+  job.settlement.acceptedForDeliveryAt = submission.reviewedAt;
+  job.status = "delivered";
+  job.settlement.status = "release-ready";
+  save();
+  emit("submission-accepted", { jobId: job.jobId, submissionId, commitmentHash: job.pendingHire.hash });
+  return {
+    ok: true,
+    status: "release-ready",
+    submissionId,
+    next: "The buyer must explicitly request approval before Prime Port returns the release transaction.",
+  };
+}
+
+async function approveJob(job, rawNote) {
+  ensureSettlement(job);
+  if (job.status !== "delivered") throw new Error(`job is ${job.status}, no Prime Port revision has been accepted for release`);
+  const note = rawNote == null ? null : z.string().trim().min(1).max(2_000).parse(rawNote);
+  if (note) await portSvc("POST", `/ports/${job.jobId}/messages`, { peerInboxId: hiredInboxId(job), content: note });
+  job.settlement.approvalRequestedAt = Date.now();
+  save();
+  emit("job-approval-requested", { jobId: job.jobId, commitmentHash: job.pendingHire.hash });
+  return {
+    ok: true,
+    transaction: buildReleaseRequest(job.pendingHire, ESCROW),
+    next: "The buyer wallet must sign and broadcast this transaction. Settlement only changes after EscrowReleased is observed on X Layer.",
+  };
+}
+
+async function openBuyerDispute(job, rawReason) {
+  ensureSettlement(job);
+  if (!["hired", "delivered", "delivery-rejected"].includes(job.status)) {
+    throw new Error(`job is ${job.status}, only funded unsettled jobs can be disputed`);
+  }
+  const reason = z.string().trim().min(10).max(2_000).parse(rawReason);
+  const evidence = await buildDisputeEvidence(job, "buyer", reason);
+  emit("dispute-requested", { jobId: job.jobId, commitmentHash: job.pendingHire.hash, evidenceHash: evidence.evidenceHash, openedBy: "buyer" });
+  return {
+    ok: true,
+    ...evidence,
+    next: "The buyer wallet must sign and broadcast the openDispute transaction. Prime Port submits to GenLayer only after DisputeOpened is observed on X Layer.",
+  };
+}
+
+function startRating(job, input) {
+  if (job.status !== "settled") throw new Error(`job is ${job.status}, rate after escrow settles`);
+  if (job.review) throw new Error("already rated");
+  const stars = z.coerce.number().int().min(1).max(5).parse(input.stars);
+  const note = input.note == null ? "" : z.string().max(280).parse(input.note);
+  const review = {
+    version: 1,
+    jobId: job.jobId,
+    commitmentHash: job.pendingHire.hash,
+    freelancer: hiredInboxId(job),
+    stars,
+    note,
+    ratedAt: Math.floor(Date.now() / 1000),
+  };
+  const hash = commitmentHash(review);
+  job.pendingReview = { review, hash };
+  save();
+  return {
+    reviewHash: hash,
+    review,
+    signThisExactly: reviewMessage(hash),
+    next: "The buyer wallet must personal_sign that exact message, then submit the signature.",
+  };
+}
+
+async function confirmRating(job, signatureInput) {
+  if (!job.pendingReview) throw new Error("no rating in progress");
+  const signature = z.string().regex(/^0x[0-9a-fA-F]+$/).parse(signatureInput);
+  const valid = await verifyMessage({
+    address: job.agent.wallet,
+    message: reviewMessage(job.pendingReview.hash),
+    signature,
+  });
+  if (!valid) throw new Error("signature does not recover the agent wallet");
+  job.review = { ...job.pendingReview.review, hash: job.pendingReview.hash, signature };
+  delete job.pendingReview;
+  save();
+  emit("freelancer-rated", { jobId: job.jobId, freelancer: job.review.freelancer, stars: job.review.stars, reviewHash: job.review.hash });
+  return { ok: true, review: job.review };
 }
 
 function buildServer(agentSession) {
@@ -612,6 +934,7 @@ function buildServer(agentSession) {
       agentWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe("Your marketplace wallet; it will sign the hire commitment"),
       title: z.string().min(8).max(120).refine((title) => !/^(post|publish|help me post|set up)\b/i.test(title), "title must describe the actual freelancer job"),
       marketplaceJobId: z.string().optional().describe("The OKX task id of the publish task you opened against our 'Job publishing' service. Without it the listing goes up, but port_connect, negotiate and hire stay locked: the publish fee pays for the port."),
+      conversationJobId: z.string().min(1).max(300).optional().describe("Optional current OKX A2A job id. When supplied, Prime Port binds the ready-made buyer conversation exactly. Otherwise it reuses the latest existing conversation with the buyer agent."),
     },
     async (args) => {
       if (args.publishToken !== BACKEND_SERVICE_TOKEN) throw new Error("publish service authorization required");
@@ -619,17 +942,23 @@ function buildServer(agentSession) {
         throw new Error("published agent wallet must match the authenticated wallet");
       }
       const { jobId, port } = await publishJob(args);
+      const job = getJob(jobId);
       return text({
         jobId,
         port,
-        next: "Freelancers will claim and appear in get_offers. Talk to them yourself via port_connect (preferred) or negotiate (we relay). Both unlock once your publish task's escrow locks.",
+        conversation: job.a2a?.enabled ? {
+          interface: "OKX A2A",
+          primePortAgentId: String(process.env.EXPECTED_OKX_AGENT_ID ?? "5982"),
+          jobId: job.a2a.conversationJobId,
+        } : null,
+        next: "Freelancers will appear as C1, C2, and so on in the buyer's existing OKX conversation after the publish task escrow locks.",
       });
     },
   );
 
   mcp.tool(
     "port_connect",
-    "Get the credential to run your own XMTP client as this job's port. You register your own device on the port inbox: create an XMTP client for the port's identity and have your signer POST the sign-in message to the grant endpoint with the token. Budgeted and time-limited; we never see your device keys.",
+    "Advanced compatibility path for runtimes that explicitly want direct port control. Most buyers should stay in the ready-made OKX conversation and never call this tool.",
     { jobId: z.string() },
     async ({ jobId }) => {
       const job = getJob(jobId);
@@ -653,23 +982,7 @@ function buildServer(agentSession) {
     async ({ jobId }) => {
       const job = getJob(jobId);
       requireAgent(job, agentSession);
-      const { conversations } = await portSvc("GET", `/ports/${jobId}/conversations`);
-      const offers = [];
-      for (const claim of job.claims) {
-        const { jobsClaimed, jobsCompleted, completionRate, avgStars, reviewCount } = reputation(claim.inboxId);
-        const channel = conversations.find((c) => c.peerInboxId === claim.inboxId) ?? { messageCount: 0 };
-        // Evidence delivered on this channel, envelope and all, so the agent
-        // can fetch and decrypt each deliverable without its own XMTP client.
-        const attachments = channel.attachmentCount
-          ? (await portSvc("GET", `/ports/${jobId}/channel?peer=${claim.inboxId}`)).messages.filter((m) => m.kind === "attachment")
-          : [];
-        offers.push({
-          ...claim,
-          reputation: { jobsClaimed, jobsCompleted, completionRate, avgStars, reviewCount },
-          channel,
-          attachments,
-        });
-      }
+      const offers = await offersForJob(job);
       return text({
         jobId,
         status: job.status,
@@ -685,18 +998,14 @@ function buildServer(agentSession) {
 
   mcp.tool(
     "negotiate",
-    "Send a message to one claimant through the port (server-relayed fallback; prefer port_connect to speak on your own power). Returns the channel so far.",
+    "Send a message to one claimant through the port. The ready-made OKX buyer conversation calls this routing path with a stable candidate ID. This MCP form remains for compatible agent clients.",
     { jobId: z.string(), claimantInboxId: z.string(), message: z.string() },
     async ({ jobId, claimantInboxId, message }) => {
       const job = getJob(jobId);
       requireAgent(job, agentSession);
-      if (job.status !== "open") throw new Error(`job is ${job.status}, negotiation is over`);
-      requirePaidPort(job, "negotiate");
-      markKeyDelivered(job, "negotiate");
-      if (!job.claims.some((c) => c.inboxId === claimantInboxId)) throw new Error("no such claimant");
-      await portSvc("POST", `/ports/${jobId}/messages`, { peerInboxId: claimantInboxId, content: message });
-      const ch = await portSvc("GET", `/ports/${jobId}/channel?peer=${claimantInboxId}`);
-      return text({ sent: true, channel: ch.messages });
+      const claim = job.claims.find((candidate) => candidate.inboxId === claimantInboxId);
+      if (!claim) throw new Error("no such claimant");
+      return text(await sendCandidateMessage(job, claim, message));
     },
   );
 
@@ -713,40 +1022,9 @@ function buildServer(agentSession) {
     async ({ jobId, claimantInboxId, price, deadline, criteria }) => {
       const job = getJob(jobId);
       requireAgent(job, agentSession);
-      if (job.status !== "open") throw new Error(`job is ${job.status}`);
-      requirePaidPort(job, "hire");
-      requireEscrow(ESCROW);
       const claim = job.claims.find((c) => c.inboxId === claimantInboxId);
       if (!claim) throw new Error("no such claimant");
-      const ch = await portSvc("GET", `/ports/${jobId}/channel?peer=${claimantInboxId}`);
-      const commitment = {
-        version: 2,
-        jobId,
-        port: { inboxId: job.port.inboxId },
-        agent: job.agent,
-        freelancer: { inboxId: claim.inboxId, wallet: claim.wallet, payoutAddress: claim.payoutAddress },
-        terms: { criteria: criteria ?? job.criteria, price, currency: job.currency, deadline },
-        feeBps: job.feeBps,
-        dispute: {
-          system: "GenLayer",
-          evidencePolicy: "If either party opens a dispute, the selected job transcript, submissions, revision feedback, and attachment metadata are disclosed to GenLayer validators for settlement.",
-          outcome: "provider-award-bps",
-        },
-        transcriptHash: ch.transcriptHash,
-        hiredAt: Math.floor(Date.now() / 1000),
-      };
-      const hash = commitmentHash(commitment);
-      job.pendingHire = { commitment, hash };
-      job.pendingHire.escrow = buildEscrowAuthorization(job.pendingHire, ESCROW);
-      job.status = "hiring";
-      save();
-      return text({
-        commitmentHash: hash,
-        commitment,
-        escrowAuthorization: job.pendingHire.escrow,
-        signThisExactly: job.pendingHire.escrow.signThisExactly,
-        next: "personal_sign the escrow authorization with your marketplace wallet and call confirm_hire. The freelancer then signs the same authorization before any USDT can move.",
-      });
+      return text(await startHire(job, claim, { price, deadline, criteria }));
     },
   );
 
@@ -757,21 +1035,18 @@ function buildServer(agentSession) {
     async ({ jobId, signature }) => {
       const job = getJob(jobId);
       requireAgent(job, agentSession);
-      if (job.status !== "hiring" || !job.pendingHire) throw new Error("no hire in progress");
-      const valid = await verifyMessage({
-        address: job.agent.wallet,
-        message: authorizationMessage(job.pendingHire.escrow.authorizationHash),
-        signature,
-      });
-      if (!valid) throw new Error("signature does not recover the agent wallet");
-      job.pendingHire.agentSignature = signature;
-      job.status = "awaiting-freelancer-signature";
-      save();
-      return text({
-        ok: true,
-        waitingOn: "freelancer countersignature via the web app",
-        then: `once countersigned, call get_offers for the exact X Layer approval and funding transactions. The freelancer must wait for the EscrowFunded notification before starting work.`,
-      });
+      return text(await confirmHire(job, signature));
+    },
+  );
+
+  mcp.tool(
+    "cancel_hire",
+    "Cancel a prepared hire before the freelancer countersigns it. Prime Port refuses off-chain cancellation after both signatures exist because that authorization can still be funded until its deadline.",
+    { jobId: z.string() },
+    async ({ jobId }) => {
+      const job = getJob(jobId);
+      requireAgent(job, agentSession);
+      return text(await cancelHire(job));
     },
   );
 
@@ -787,44 +1062,7 @@ function buildServer(agentSession) {
     async ({ jobId, submissionId, decision, feedback }) => {
       const job = getJob(jobId);
       requireAgent(job, agentSession);
-      ensureSettlement(job);
-      if (job.status !== "hired") throw new Error(`job is ${job.status}, review requires locked escrow`);
-      const submission = job.submissions?.find((candidate) => candidate.submissionId === submissionId);
-      if (!submission) throw new Error("unknown submission");
-      if (submission.status !== "awaiting-review") throw new Error(`submission is ${submission.status}`);
-
-      if (decision === "request_changes") {
-        const reason = z.string().trim().min(3).max(2000).parse(feedback);
-        submission.status = "revision-requested";
-        submission.reviewedAt = Date.now();
-        submission.feedback = reason;
-        job.settlement.reviewStatus = "revision-requested";
-        job.settlement.revisionRequestedAt = submission.reviewedAt;
-        await portSvc("POST", `/ports/${jobId}/messages`, {
-          peerInboxId: hiredInboxId(job),
-          content: `Changes requested for ${submissionId}: ${reason}`,
-        });
-        save();
-        emit("submission-revision-requested", { jobId, submissionId, commitmentHash: job.pendingHire.hash, feedback: reason });
-        return text({ ok: true, status: "revision-requested", submissionId, next: "Wait for the freelancer's revised submission in this port." });
-      }
-
-      submission.status = "accepted";
-      submission.reviewedAt = Date.now();
-      submission.feedback = feedback?.trim() ?? "";
-      job.settlement.reviewStatus = "final-delivery-ready";
-      job.settlement.finalSubmissionId = submissionId;
-      job.settlement.acceptedForDeliveryAt = submission.reviewedAt;
-      job.status = "delivered";
-      job.settlement.status = "release-ready";
-      save();
-      emit("submission-accepted", { jobId, submissionId, commitmentHash: job.pendingHire.hash });
-      return text({
-        ok: true,
-        status: "release-ready",
-        submissionId,
-        next: "Call approve to receive the X Layer release transaction. Funds do not move until the buyer wallet signs that transaction.",
-      });
+      return text(await reviewJobSubmission(job, { submissionId, decision, feedback }));
     },
   );
 
@@ -835,17 +1073,7 @@ function buildServer(agentSession) {
     async ({ jobId, note }) => {
       const job = getJob(jobId);
       requireAgent(job, agentSession);
-      ensureSettlement(job);
-      if (job.status !== "delivered") throw new Error(`job is ${job.status}, no Prime Port revision has been accepted for release`);
-      if (note) await portSvc("POST", `/ports/${jobId}/messages`, { peerInboxId: hiredInboxId(job), content: note });
-      job.settlement.approvalRequestedAt = Date.now();
-      save();
-      emit("job-approval-requested", { jobId, commitmentHash: job.pendingHire.hash });
-      return text({
-        ok: true,
-        transaction: buildReleaseRequest(job.pendingHire, ESCROW),
-        next: "Sign and broadcast this transaction with the buyer wallet. Prime Port settles and archives the port only after observing EscrowReleased on X Layer.",
-      });
+      return text(await approveJob(job, note));
     },
   );
 
@@ -859,17 +1087,7 @@ function buildServer(agentSession) {
     async ({ jobId, reason }) => {
       const job = getJob(jobId);
       requireAgent(job, agentSession);
-      ensureSettlement(job);
-      if (!["hired", "delivered", "delivery-rejected"].includes(job.status)) {
-        throw new Error(`job is ${job.status}, only funded unsettled jobs can be disputed`);
-      }
-      const evidence = await buildDisputeEvidence(job, "buyer", reason);
-      emit("dispute-requested", { jobId, commitmentHash: job.pendingHire.hash, evidenceHash: evidence.evidenceHash, openedBy: "buyer" });
-      return text({
-        ok: true,
-        ...evidence,
-        next: "Sign and broadcast the openDispute transaction with the buyer wallet. Prime Port submits the case to GenLayer only after observing DisputeOpened on X Layer.",
-      });
+      return text(await openBuyerDispute(job, reason));
     },
   );
 
@@ -884,26 +1102,7 @@ function buildServer(agentSession) {
     async ({ jobId, stars, note }) => {
       const job = getJob(jobId);
       requireAgent(job, agentSession);
-      if (job.status !== "settled") throw new Error(`job is ${job.status}, rate after approve settles it`);
-      if (job.review) throw new Error("already rated");
-      const review = {
-        version: 1,
-        jobId,
-        commitmentHash: job.pendingHire.hash,
-        freelancer: hiredInboxId(job),
-        stars,
-        note: note ?? "",
-        ratedAt: Math.floor(Date.now() / 1000),
-      };
-      const hash = commitmentHash(review);
-      job.pendingReview = { review, hash };
-      save();
-      return text({
-        reviewHash: hash,
-        review,
-        signThisExactly: reviewMessage(hash),
-        next: "personal_sign that message with your marketplace wallet and call confirm_rate with the signature.",
-      });
+      return text(startRating(job, { stars, note }));
     },
   );
 
@@ -914,18 +1113,7 @@ function buildServer(agentSession) {
     async ({ jobId, signature }) => {
       const job = getJob(jobId);
       requireAgent(job, agentSession);
-      if (!job.pendingReview) throw new Error("no rating in progress");
-      const valid = await verifyMessage({
-        address: job.agent.wallet,
-        message: reviewMessage(job.pendingReview.hash),
-        signature,
-      });
-      if (!valid) throw new Error("signature does not recover the agent wallet");
-      job.review = { ...job.pendingReview.review, hash: job.pendingReview.hash, signature };
-      delete job.pendingReview;
-      save();
-      emit("freelancer-rated", { jobId, freelancer: job.review.freelancer, stars: job.review.stars, reviewHash: job.review.hash });
-      return text({ ok: true, review: job.review });
+      return text(await confirmRating(job, signature));
     },
   );
 
@@ -966,9 +1154,15 @@ const rest = {
       claimedAt: Date.now(),
     };
     if (job.claims.some((c) => c.inboxId === claim.inboxId)) throw new Error("already claimed");
+    assignCandidateAlias(job, claim);
     job.claims.push(claim);
     save();
-    return { claimed: true, portInboxId: job.port.inboxId, next: "DM the port inbox to negotiate" };
+    return {
+      claimed: true,
+      candidateId: claim.candidateId,
+      portInboxId: job.port.inboxId,
+      next: "DM the port inbox to negotiate. The buyer sees your messages under this candidate ID in their existing OKX conversation.",
+    };
   },
   "POST /jobs/:jobId/agent-grant/sign": async (body, jobId, req) => {
     const job = getJob(jobId);
@@ -1228,8 +1422,8 @@ paymentServer.onSettleFailure(async ({ paymentPayload, error }) => {
 const paidPublishServiceDescription = [
   "You are the calling buyer agent. Use this paid operation when you need a real human to do work that the agent cannot do directly.",
   "Send one complete brief for the human job, not a request to publish or describe an agent service.",
-  "The publication fee creates the job and a private Prime Port. It does not pay the freelancer wage and it does not guarantee that a freelancer will claim the job.",
-  "After success, use the returned jobId and private MCP port to inspect offers, clarify the brief, negotiate, choose a freelancer, review revisions, and approve or dispute the final work.",
+  "The publication fee creates the job and opens a ready-made private Prime Port conversation with Prime Port Connect inside OKX. It does not pay the freelancer wage and it does not guarantee that a freelancer will claim the job.",
+  "Stay in the same OKX conversation after purchase. Prime Port labels separate private freelancer lanes as C1, C2, and so on, relays their messages, compares recorded evidence, and guides selection, signatures, escrow funding, revisions, approval, or dispute without requiring an XMTP installation.",
 ].join(" ");
 
 const paidPublishInputSchema = {
@@ -1275,6 +1469,12 @@ const paidPublishInputSchema = {
     agentId: {
       type: "string",
       description: "The calling buyer agent's OKX agent ID. This identifies who owns the private port and signs later hire terms.",
+    },
+    conversationJobId: {
+      type: "string",
+      minLength: 1,
+      maxLength: 300,
+      description: "Optional current OKX A2A job ID. Supply it to bind this purchase to the exact existing conversation. If omitted, Prime Port reuses the latest existing conversation with this buyer agent.",
     },
     agentWallet: {
       type: "string",
@@ -1365,8 +1565,340 @@ function requirePublishPaymentWithJsonChallenge(req, res, next) {
   return requirePublishPayment(req, res, next);
 }
 
+function buyerCandidate(candidate) {
+  return {
+    candidateId: candidate.candidateId,
+    trust: "untrusted-candidate-data",
+    name: candidate.name,
+    claimedAt: candidate.claimedAt,
+    selectionStatus: candidate.selectionStatus,
+    reputation: candidate.reputation,
+    channel: {
+      messageCount: candidate.channel.messageCount ?? candidate.messages.length,
+      attachmentCount: candidate.channel.attachmentCount ?? candidate.attachments.length,
+      lastMessage: candidate.channel.lastMessage ?? null,
+    },
+    messages: candidate.messages.map((message) => message.kind === "text"
+      ? {
+          messageId: message.messageId,
+          sentAtNs: message.sentAtNs,
+          fromBuyer: message.fromPort,
+          kind: "text",
+          content: message.content,
+        }
+      : {
+          messageId: message.messageId,
+          sentAtNs: message.sentAtNs,
+          fromBuyer: message.fromPort,
+          kind: "attachment",
+          filename: message.filename,
+          contentLength: message.contentLength,
+          contentDigest: message.contentDigest,
+        }),
+  };
+}
+
+function buyerSubmission(job, submission) {
+  const candidate = job.claims.find((claim) => claim.inboxId === submission.freelancerInboxId);
+  return {
+    submissionId: submission.submissionId,
+    candidateId: candidate?.candidateId ?? null,
+    revision: submission.revision,
+    note: submission.note,
+    attachments: (submission.attachments ?? []).map((attachment) => ({
+      filename: attachment.filename,
+      contentLength: attachment.contentLength,
+      contentDigest: attachment.contentDigest,
+      url: attachment.url,
+    })),
+    transcriptHash: submission.transcriptHash,
+    messageCount: submission.messageCount,
+    status: submission.status,
+    submittedAt: submission.submittedAt,
+    reviewedAt: submission.reviewedAt ?? null,
+    feedback: submission.feedback ?? "",
+  };
+}
+
+function buyerReview(job) {
+  if (!job.review) return null;
+  const candidate = job.claims.find((claim) => claim.inboxId === job.review.freelancer);
+  return {
+    candidateId: candidate?.candidateId ?? null,
+    commitmentHash: job.review.commitmentHash,
+    stars: job.review.stars,
+    note: job.review.note,
+    ratedAt: job.review.ratedAt,
+    hash: job.review.hash,
+  };
+}
+
+function buyerHireSummary(job) {
+  if (!job.pendingHire) return null;
+  const commitment = job.pendingHire.commitment;
+  return {
+    candidateId: job.pendingHire.candidateId
+      ?? job.claims.find((claim) => claim.inboxId === commitment.freelancer.inboxId)?.candidateId
+      ?? null,
+    commitmentHash: job.pendingHire.hash,
+    terms: commitment.terms,
+    transcriptHash: commitment.transcriptHash,
+    buyerWallet: commitment.agent.wallet,
+    providerWallet: commitment.freelancer.wallet,
+    payoutAddress: commitment.freelancer.payoutAddress,
+    escrowAuthorization: job.pendingHire.escrow,
+    buyerSigned: Boolean(job.pendingHire.agentSignature),
+    freelancerSigned: Boolean(job.pendingHire.freelancerSignature),
+  };
+}
+
+async function buyerContext(job) {
+  requirePaidPort(job, "buyer conversation");
+  markKeyDelivered(job, "okx-a2a-conversation");
+  const candidates = (await offersForJob(job)).map(buyerCandidate);
+  const escrowFunding = job.status === "awaiting-escrow"
+    && job.pendingHire?.escrow
+    && job.pendingHire.agentSignature
+    && job.pendingHire.freelancerSignature
+    ? buildFundingRequest(job.pendingHire, ESCROW)
+    : null;
+  return {
+    ok: true,
+    job: {
+      jobId: job.jobId,
+      title: job.title,
+      description: job.description,
+      deliverables: job.deliverables,
+      criteria: job.criteria,
+      openingPrice: job.price,
+      currency: job.currency,
+      deadline: job.deadline,
+      status: job.status,
+    },
+    candidates,
+    shortlist: candidates.filter((candidate) => candidate.selectionStatus === "shortlisted").map((candidate) => candidate.candidateId),
+    pendingHire: buyerHireSummary(job),
+    settlement: job.settlement ?? null,
+    escrowFunding,
+    submissions: (job.submissions ?? []).map((submission) => buyerSubmission(job, submission)),
+    review: buyerReview(job),
+  };
+}
+
+function findA2AJobs(rawConversationJobId, rawBuyerAgentId) {
+  const conversationId = z.string().min(1).max(300).parse(rawConversationJobId);
+  const buyerAgentId = z.string().min(1).max(100).parse(String(rawBuyerAgentId ?? ""));
+  const bound = Object.values(jobs).filter((job) => {
+    if (!job.a2a?.enabled) return false;
+    ensureA2AState(job);
+    return job.a2a.conversationJobId === conversationId;
+  });
+  if (bound.length === 0) throw new Error(`no Prime Port job is bound to OKX conversation ${conversationId}`);
+  const owned = bound.filter((job) => String(job.a2a.buyerAgentId ?? job.agent.agentId) === buyerAgentId);
+  if (owned.length === 0) throw new Error("this OKX buyer agent does not own the Prime Port job");
+  return owned;
+}
+
+function findA2AJob(rawConversationJobId, rawBuyerAgentId, rawPrimePortJobId) {
+  const matches = findA2AJobs(rawConversationJobId, rawBuyerAgentId);
+  if (rawPrimePortJobId != null) {
+    const primePortJobId = z.string().min(1).max(300).parse(rawPrimePortJobId);
+    const exact = matches.find((job) => job.jobId === primePortJobId);
+    if (!exact) throw new Error(`Prime Port job ${primePortJobId} is not bound to this OKX conversation`);
+    return exact;
+  }
+  if (matches.length > 1) {
+    const choices = matches.map((job) => `${job.jobId} (${job.title})`).join(", ");
+    throw new Error(`this OKX conversation contains multiple Prime Port jobs. Choose one exact job: ${choices}`);
+  }
+  return matches[0];
+}
+
+async function runA2AAction(body) {
+  if (body.action === "jobs") {
+    return {
+      ok: true,
+      jobs: findA2AJobs(body.conversationJobId, body.buyerAgentId).map((job) => ({
+        jobId: job.jobId,
+        title: job.title,
+        status: job.status,
+        createdAt: job.createdAt,
+      })),
+    };
+  }
+  const job = findA2AJob(body.conversationJobId, body.buyerAgentId, body.primePortJobId);
+  const args = body.args ?? {};
+  switch (body.action) {
+    case "context":
+      return buyerContext(job);
+    case "send":
+      return sendCandidateMessage(job, findCandidate(job, args.candidateId), args.message);
+    case "shortlist": {
+      if (job.status !== "open") throw new Error(`job is ${job.status}, shortlist is closed`);
+      const candidateIds = z.array(z.string()).min(1).max(20).parse(args.candidateIds);
+      const selected = new Set(candidateIds.map((candidateId) => findCandidate(job, candidateId).candidateId));
+      for (const claim of job.claims) {
+        if (["selected", "hired", "not-selected"].includes(claim.selectionStatus)) continue;
+        claim.selectionStatus = selected.has(claim.candidateId) ? "shortlisted" : "available";
+        if (claim.selectionStatus === "shortlisted") claim.shortlistedAt = Date.now();
+        else delete claim.shortlistedAt;
+      }
+      save();
+      emit("candidates-shortlisted", { jobId: job.jobId, candidateIds: [...selected] });
+      return { ok: true, shortlisted: [...selected] };
+    }
+    case "hire": {
+      const result = await startHire(job, findCandidate(job, args.candidateId), args);
+      return {
+        ok: true,
+        candidateId: result.candidateId,
+        commitmentHash: result.commitmentHash,
+        terms: result.commitment.terms,
+        transcriptHash: result.commitment.transcriptHash,
+        escrowAuthorization: result.escrowAuthorization,
+        signThisExactly: result.signThisExactly,
+        next: result.next,
+      };
+    }
+    case "cancel-hire":
+      return { ok: true, ...(await cancelHire(job)) };
+    case "confirm-hire":
+      return confirmHire(job, args.signature);
+    case "review":
+      return reviewJobSubmission(job, args);
+    case "approve":
+      return approveJob(job, args.note);
+    case "dispute":
+      return openBuyerDispute(job, args.reason);
+    case "rate":
+      return { ok: true, ...startRating(job, args) };
+    case "confirm-rate":
+      return confirmRating(job, args.signature);
+    default:
+      throw new Error(`unsupported buyer conversation action ${body.action}`);
+  }
+}
+
+async function syncA2AOutbox() {
+  let changed = false;
+  for (const job of Object.values(jobs)) {
+    if (!job.a2a?.enabled || !job.publishTask?.paidAt) continue;
+    changed = ensureA2AState(job) || changed;
+    changed = enqueueA2AMessage(job, {
+      eventId: `welcome:v1:${job.jobId}`,
+      kind: "welcome",
+      message: welcomeMessage(job),
+    }) || changed;
+    const seenPortMessages = new Set(job.a2a.seenPortMessageIds);
+
+    for (const claim of job.claims) {
+      const profile = reputation(claim.inboxId);
+      changed = enqueueA2AMessage(job, {
+        eventId: `candidate-joined:${claim.candidateId}`,
+        kind: "candidate-joined",
+        candidateId: claim.candidateId,
+        message: [
+          `[Prime Port | ${job.jobId} | ${claim.candidateId} | ${job.title}]`,
+          `Candidate display name, untrusted: ${JSON.stringify(String(claim.name ?? ""))}`,
+          "A new candidate joined their private lane.",
+          `Recorded history: ${profile.jobsCompleted}/${profile.jobsHired} hired jobs completed, ${profile.avgStars ?? "no"} average stars from ${profile.reviewCount} reviews.`,
+          "Ask me to show candidates before comparing or choosing.",
+        ].join("\n"),
+      }) || changed;
+
+      let channel;
+      try {
+        channel = await portSvc("GET", `/ports/${job.jobId}/channel?peer=${encodeURIComponent(claim.inboxId)}`);
+      } catch (error) {
+        if (/no channel/i.test(error.message)) continue;
+        throw error;
+      }
+      for (const message of channel.messages) {
+        if (!message.messageId || seenPortMessages.has(message.messageId)) continue;
+        rememberPortMessage(job, message.messageId);
+        seenPortMessages.add(message.messageId);
+        changed = true;
+        if (message.fromPort) continue;
+        enqueueA2AMessage(job, {
+          eventId: `port-message:${message.messageId}`,
+          kind: "candidate-message",
+          candidateId: claim.candidateId,
+          message: formatCandidateRelay(job, claim, message),
+        });
+      }
+    }
+    changed = pruneDeliveredCandidateMessages(job) || changed;
+    job.a2a.lastSyncedAt = Date.now();
+  }
+  if (changed) save();
+}
+
 const app = express();
 app.use(express.json({ limit: "2mb" }));
+
+app.post("/internal/a2a/action", async (req, res) => {
+  try {
+    requireBackend(req);
+    res.json(await runA2AAction(req.body ?? {}));
+  } catch (error) {
+    const status = /authentication required/i.test(error.message) ? 401
+      : /does not own/i.test(error.message) ? 403
+        : 400;
+    res.status(status).json({ error: error.message });
+  }
+});
+
+app.post("/internal/a2a/outbox/lease", async (req, res) => {
+  try {
+    requireBackend(req);
+    await syncA2AOutbox();
+    const limit = z.coerce.number().int().min(1).max(25).default(10).parse(req.body?.limit ?? 10);
+    const items = leaseOutboxItems(Object.values(jobs), {
+      limit,
+      leaseToken: randomUUID,
+    });
+    if (items.length) save();
+    res.json({ items });
+  } catch (error) {
+    res.status(/authentication required/i.test(error.message) ? 401 : 400).json({ error: error.message });
+  }
+});
+
+app.post("/internal/a2a/outbox/ack", (req, res) => {
+  try {
+    requireBackend(req);
+    const eventId = z.string().min(1).max(500).parse(req.body?.eventId);
+    const leaseToken = z.string().uuid().parse(req.body?.leaseToken);
+    const match = Object.values(jobs)
+      .flatMap((job) => (job.a2a?.outbox ?? []).map((item) => ({ job, item })))
+      .find(({ item }) => item.eventId === eventId && item.leaseToken === leaseToken);
+    if (!match) throw new Error("unknown or expired A2A outbox lease");
+    const { job, item } = match;
+    if (req.body?.success === true) {
+      const resolvedA2AJobId = z.string().min(1).max(300).parse(req.body?.resolvedA2AJobId);
+      if (job.a2a.conversationJobId && job.a2a.conversationJobId !== resolvedA2AJobId) {
+        throw new Error("A2A delivery resolved to a different OKX conversation");
+      }
+      job.a2a.conversationJobId ??= resolvedA2AJobId;
+      item.status = "sent";
+      item.deliveredAt = Date.now();
+      item.a2aMessageId = req.body.messageId == null ? null : String(req.body.messageId).slice(0, 500);
+      delete item.lastError;
+      delete item.nextAttemptAt;
+      if (item.kind === "welcome") markKeyDelivered(job, "okx-a2a-conversation");
+    } else {
+      item.status = "pending";
+      item.lastError = String(req.body?.error ?? "unknown A2A delivery error").slice(0, 2_000);
+      item.nextAttemptAt = Date.now() + Math.min(10 * 60_000, 5_000 * (2 ** Math.min(item.attempts, 7)));
+    }
+    delete item.leaseToken;
+    delete item.leasedUntil;
+    save();
+    res.json({ recorded: true, eventId, status: item.status });
+  } catch (error) {
+    res.status(/authentication required/i.test(error.message) ? 401 : 400).json({ error: error.message });
+  }
+});
 
 const sessionMessage = ({ wallet, inboxId, challenge }) => [
   "Prime Port freelancer session",
@@ -1497,15 +2029,20 @@ app.post(
     const paymentId = `x402-${randomUUID()}`;
     const pending = await prepareJob({ ...args, marketplaceJobId: paymentId });
     pending.job.publishTask.paymentMode = "x402";
+    ensureA2AState(pending.job);
     pending.payer = payer;
     stagePreparedJob(pending);
     pendingPaidPublishes.set(key, pending);
     res.json({
       jobId: pending.jobId,
-      port: pending.port,
       status: "waiting-for-freelancers",
-      mcpEndpoint: `${PUBLIC_BASE_URL}/mcp`,
-      next: "Connect to the port, monitor get_offers, and negotiate directly with freelancers. Publication does not guarantee that a freelancer will claim the job.",
+      conversation: {
+        interface: "OKX A2A",
+        primePortAgentId: String(process.env.EXPECTED_OKX_AGENT_ID ?? "5982"),
+        jobId: pending.job.a2a.conversationJobId,
+        status: pending.job.a2a.conversationJobId ? "opening" : "binding-existing-conversation",
+      },
+      next: "Stay in your existing OKX conversation with Prime Port Connect. Candidate and escrow updates will arrive there automatically. Publication does not guarantee that a freelancer will claim the job.",
     });
   } catch (e) {
     res.status(400).json({ error: e.message });

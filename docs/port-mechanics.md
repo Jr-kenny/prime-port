@@ -1,4 +1,6 @@
-# Port mechanics — spike findings
+# Port mechanics - spike findings
+
+This document records the optional direct-installation path proved by the original spike. The paid buyer experience now uses the ready-made OKX conversation described in [buyer-conversation.md](buyer-conversation.md). `port_connect` remains available for advanced runtimes, but buyers no longer need it to use Prime Port.
 
 Answers the open item "verify agent-side UX for holding a port installation." Verified against
 the XMTP docs (manage-inboxes) and the onchainos 4.2.1 CLI on 2026-07-11.
@@ -114,8 +116,8 @@ Two refinements from productionizing this in `backend/port-service` (the e2e fou
   compute the transcript hash, get_offers reads it constantly), the "first sync after revoke"
   can't come from it. Every port therefore mints a second, cold installation alongside the
   working one: it collects welcomes from birth but never syncs until scrap, so its first sync is
-  guaranteed to land after the revocation. Scrap revokes everything except the scrapper — the
-  working installation dies with the agent's — and the scrapper archives and flushes.
+  guaranteed to land after the revocation. Scrap revokes everything except the scrapper. The
+  working installation dies with the agent's, and the scrapper archives and flushes.
 - **The lockout lands when the revoked client syncs.** MLS receivers tolerate a short window of
   past epochs for out-of-order delivery, so a client that deliberately stops syncing can inject
   a message or two right after the flush. This can't touch evidence: the archive is taken at
