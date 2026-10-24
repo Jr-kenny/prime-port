@@ -51,13 +51,16 @@ USDT_ADDRESS=0xF736cfDCda31aa450146b6Fe943Ce77Deb2718d8
 ESCROW_CHAIN_ID=46630
 ESCROW_CHAIN_NAME="Robinhood Chain Testnet"
 ESCROW_RPC_URL=https://rpc.testnet.chain.robinhood.com
-ESCROW_START_BLOCK=<first escrow block, or 0 to scan from the deployment>
+ESCROW_START_BLOCK=141716011
 
 GENLAYER_JUDGE_ADDRESS=<judge contract>
 GENLAYER_RPC_URL=<genlayer rpc>
 GENLAYER_RELAYER_KEY=<relayer key>
 RELAYER_TOKEN=<shared secret>
 ```
+
+The escrow was deployed at block `141716011`, so the watcher starts there and
+never scans the chain before the contract existed.
 
 The four escrow values move together. The chain id is bound into the signed hire
 authorization, so a half-switched deployment produces authorizations that the
