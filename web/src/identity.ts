@@ -71,7 +71,7 @@ const CHAINS: Record<number, {
   4663: {
     name: "Robinhood Chain",
     currency: { name: "Ether", symbol: "ETH", decimals: 18 },
-    rpc: "https://rpc.chain.robinhood.com",
+    rpc: "https://rpc.mainnet.chain.robinhood.com",
     explorer: "https://robinhoodchain.blockscout.com",
   },
 };
