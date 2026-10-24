@@ -22,8 +22,8 @@ export function startEscrowWatcher({ config, cursorPath, onEvent, env = process.
 
   const chain = defineChain({
     id: config.chainId,
-    name: "X Layer",
-    nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
+    name: config.chainName ?? "Robinhood Chain",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
     rpcUrls: { default: { http: [config.rpcUrl] } },
   });
   const client = createPublicClient({ chain, transport: http(config.rpcUrl) });

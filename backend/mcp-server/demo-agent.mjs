@@ -4,10 +4,10 @@
 // conversation speed on camera.
 //
 // The port side is entirely real: real MCP tools, real XMTP channel, real
-// signatures over the real commitment. The marketplace money legs (publish
-// fee escrow, wage escrow) are simulated here the same way e2e.mjs does,
-// because the camera is pointed at the port, not the marketplace; the
-// on-chain run happens separately and closes issue #24.
+// signatures over the real commitment. The publish fee and the wage escrow
+// are simulated locally, because the camera is pointed at the port; the
+// on-chain run happens separately. Start the demo server with
+// ESCROW_TEST_EVENTS=1 so the simulated escrow lock is accepted.
 //
 // Usage (BACKEND defaults to http://localhost:7860):
 //   node demo-agent.mjs publish "<title>" "<criteria>" [price]   (omit price = open to offers)
@@ -32,10 +32,10 @@ const keyPath = `${DATA}demo-agent-key`;
 if (!existsSync(keyPath)) writeFileSync(keyPath, generatePrivateKey(), { mode: 0o600 });
 const agent = privateKeyToAccount(readFileSync(keyPath, "utf8").trim());
 
-const rest = async (method, path, body) => {
+const rest = async (method, path, body, extraHeaders = {}) => {
   const r = await fetch(`${BACKEND}${path}`, {
     method,
-    headers: body ? { "content-type": "application/json" } : undefined,
+    headers: { ...(body ? { "content-type": "application/json" } : {}), ...extraHeaders },
     body: body ? JSON.stringify(body) : undefined,
   });
   const j = await r.json();
@@ -65,21 +65,18 @@ try {
   if (cmd === "publish") {
     const [title, criteria, price] = rest_;
     if (!title || !criteria) throw new Error("usage: publish <title> <criteria> [price]  (omit price to list open to offers)");
-    const mktId = `demo-pub-${Date.now()}`;
-    const pub = await call("publish", {
-      publishToken: process.env.BACKEND_SERVICE_TOKEN,
+    const pub = await rest("POST", "/jobs", {
       title,
+      description: `${title}. Demo brief: do the work described by the acceptance criteria and return the deliverables.`,
+      deliverables: "The artifact described by the title, plus a short note on what was done.",
       criteria,
       ...(price ? { price } : {}),
       currency: "USDT",
       deadline: Math.floor(Date.now() / 1000) + 86400,
       agentId: "demo-client-agent",
       agentWallet: agent.address,
-      marketplaceJobId: mktId,
-    });
-    // What the watcher reports when the fee escrow locks on a real order.
-    await rest("POST", `/jobs/${pub.jobId}/publish-task/paid`, { marketplaceJobId: mktId });
-    show({ jobId: pub.jobId, port: pub.port, publishFeePaid: true });
+    }, { "x-backend-service-token": process.env.BACKEND_SERVICE_TOKEN ?? "" });
+    show({ jobId: pub.jobId, port: pub.port, publishFeePaid: "internal" });
   } else if (cmd === "offers") {
     show(await call("get_offers", { jobId: rest_[0] }));
   } else if (cmd === "say") {
@@ -99,9 +96,24 @@ try {
     show({ commitmentHash: hire.commitmentHash, signed: true, ...confirmed });
   } else if (cmd === "escrow") {
     const jobId = rest_[0];
-    const mktId = `demo-wage-${Date.now()}`;
-    await rest("POST", `/jobs/${jobId}/job-task`, { marketplaceJobId: mktId });
-    show(await rest("POST", `/jobs/${jobId}/job-task/paid`, { marketplaceJobId: mktId }));
+    const internal = { "x-backend-service-token": process.env.BACKEND_SERVICE_TOKEN ?? "" };
+    const job = (await rest("GET", "/jobs", undefined, internal)).find((candidate) => candidate.jobId === jobId);
+    if (!job?.pendingHire) throw new Error("hire and countersign first: the job has no pending hire to fund");
+    const { commitmentHash, terms, escrow } = job.pendingHire;
+    show(await rest("POST", "/internal/escrow-event", {
+      eventName: "EscrowFunded",
+      transactionHash: `0x${"aa".repeat(32)}`,
+      blockNumber: "100",
+      logIndex: 0,
+      args: {
+        commitmentHash,
+        buyer: escrow.buyer,
+        provider: escrow.provider,
+        payout: escrow.payout,
+        amount: escrow.amountUnits,
+        deadline: String(terms.deadline),
+      },
+    }, internal));
   } else if (cmd === "approve") {
     const [jobId, ...words] = rest_;
     const note = words.join(" ") || undefined;

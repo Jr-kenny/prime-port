@@ -46,7 +46,7 @@ const fakePort = createServer(async (req, res) => {
   }
   if (req.method === "POST" && /^\/ports\/[^/]+\/messages$/.test(path)) {
     portMessages.push(body);
-    return json(res, 200, { sent: true });
+    return json(res, 200, { sent: true, messageId: `fake-msg-${portMessages.length}` });
   }
   if (req.method === "POST" && /^\/ports\/[^/]+\/scrap$/.test(path)) {
     return json(res, 200, { archive: { transcriptHashes: [`0x${"11".repeat(32)}`] } });
@@ -67,13 +67,18 @@ const server = spawn(process.execPath, [new URL("./server.mjs", import.meta.url)
     PORT_SVC: `http://127.0.0.1:${portServicePort}`,
     MCP_DATA_DIR: dataDir,
     ESCROW_ADDRESS: escrowAddress,
+    ESCROW_RPC_URL: "http://127.0.0.1:1",
+    ESCROW_CHAIN_ID: "46630",
     ESCROW_WATCHER_DISABLED: "1",
     ESCROW_TEST_EVENTS: "1",
+    PAY_TO_ADDRESS: "0x7ab4daee18a449eb76a8a7d66cb02cf34a28563e",
+    PUBLISH_PRICE_ETH: "0.001",
+    PUBLISH_CHAIN_ID: "46630",
+    PUBLISH_RPC_URL: "http://127.0.0.1:1",
     RELAYER_TOKEN: "settlement-e2e-relayer-token",
     BACKEND_SERVICE_TOKEN: "settlement-e2e-backend-token",
     SESSION_SECRET: "settlement-e2e-session-secret-32-bytes-minimum",
     PORT_SERVICE_TOKEN: "settlement-e2e-port-token",
-    X402_OFFLINE_CHALLENGE: "1",
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -95,12 +100,16 @@ const rest = async (method, path, body, extraHeaders = {}) => {
 
 let mcp;
 try {
-  for (let attempt = 0; attempt < 80; attempt += 1) {
-    try { await rest("GET", "/jobs"); break; } catch {
+  let ready = false;
+  for (let attempt = 0; attempt < 80 && !ready; attempt += 1) {
+    try { await rest("GET", "/jobs"); ready = true; } catch {
       if (server.exitCode !== null) throw new Error(`server exited early\n${serverLogs}`);
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
+  // Falling through the loop used to leave the harness hanging on open
+  // sockets instead of reporting why the server never answered.
+  if (!ready) throw new Error(`server did not answer /jobs within 4s\n${serverLogs}`);
   const buyer = privateKeyToAccount(generatePrivateKey());
   const freelancer = privateKeyToAccount(generatePrivateKey());
   const agentChallenge = await rest("POST", "/auth/agent-challenge", { wallet: buyer.address });
@@ -128,9 +137,7 @@ try {
   });
   const freelancerHeaders = { authorization: `Bearer ${authenticated.token}` };
   const internalHeaders = { "x-backend-service-token": "settlement-e2e-backend-token" };
-  const publishTask = "paid-public-port-test";
-  const published = await call("publish", {
-    publishToken: "settlement-e2e-backend-token",
+  const published = await rest("POST", "/jobs", {
     title: "Write a deterministic settlement test",
     description: "Write and revise a short result so Prime Port can verify the complete settlement lifecycle.",
     deliverables: "A reviewed written result with one revision.",
@@ -140,10 +147,8 @@ try {
     deadline: Math.floor(Date.now() / 1000) + 3600,
     agentId: "buyer-42",
     agentWallet: buyer.address,
-    marketplaceJobId: publishTask,
-  });
+  }, internalHeaders);
   const { jobId } = published;
-  await rest("POST", `/jobs/${jobId}/publish-task/paid`, { marketplaceJobId: publishTask });
   const publicListing = (await rest("GET", "/jobs")).find((candidate) => candidate.jobId === jobId);
   assert.deepEqual(publicListing.claims, []);
   assert.equal(publicListing.port, undefined);
@@ -167,45 +172,28 @@ try {
   }, freelancerHeaders);
   assert.equal(claimed.candidateId, "C1");
 
-  const leased = await rest("POST", "/internal/a2a/outbox/lease", { limit: 10 }, internalHeaders);
-  assert.deepEqual(new Set(leased.items.map((item) => item.eventId)), new Set([
-    `welcome:v1:${jobId}`,
-    "candidate-joined:C1",
-  ]));
-  for (const item of leased.items) {
-    await rest("POST", "/internal/a2a/outbox/ack", {
-      eventId: item.eventId,
-      leaseToken: item.leaseToken,
-      success: true,
-      messageId: `a2a-${item.eventId}`,
-      resolvedA2AJobId: publishTask,
-    }, internalHeaders);
-  }
-
-  const a2aAction = (action, args = {}) => rest("POST", "/internal/a2a/action", {
-    conversationJobId: publishTask,
-    buyerAgentId: "buyer-42",
-    action,
-    args,
-  }, internalHeaders);
-  const conversationContext = await a2aAction("context");
-  assert.equal(conversationContext.candidates[0].candidateId, "C1");
-  assert.equal(conversationContext.candidates[0].inboxId, undefined);
-  await a2aAction("shortlist", { candidateIds: ["C1"] });
+  const agentHeaders = { authorization: `Bearer ${agentAuthenticated.token}` };
+  const threads = await rest("GET", `/jobs/${jobId}/threads`, undefined, agentHeaders);
+  assert.deepEqual(threads.threads.map((thread) => thread.candidateId), ["C1"]);
+  const firstInbox = await rest("GET", `/jobs/${jobId}/inbox`, undefined, agentHeaders);
+  assert.deepEqual(firstInbox.messages, []);
+  assert.equal(firstInbox.cursor, 0);
 
   const cancellableDeadline = Math.floor(Date.now() / 1000) + 3600;
-  const cancellable = await a2aAction("hire", {
-    candidateId: "C1",
+  const cancellable = await call("hire", {
+    jobId,
+    claimantInboxId: "freelancer-inbox-test",
     price: "12.5",
     deadline: cancellableDeadline,
   });
-  await a2aAction("confirm-hire", {
+  await call("confirm_hire", {
+    jobId,
     signature: await buyer.signMessage({ message: cancellable.signThisExactly }),
   });
-  const cancelled = await a2aAction("cancel-hire");
+  const cancelled = await call("cancel_hire", { jobId });
   assert.equal(cancelled.status, "open");
   assert.match(cancelled.safety, /had not countersigned/);
-  assert.equal((await a2aAction("context")).candidates[0].selectionStatus, "shortlisted");
+  assert.equal((await call("get_offers", { jobId })).offers[0].selectionStatus, "available");
   assert.match(portMessages[0].content, /^\[prime-port:hire-cancelled\]/);
 
   const hireDeadline = Math.floor(Date.now() / 1000) + 3600;
@@ -223,18 +211,7 @@ try {
   assert.equal(committed.fundingRequest.amountUnits, "12500000");
   assert.match(committed.fundingRequest.approval.data, /^0x/);
   assert.match(committed.fundingRequest.funding.data, /^0x/);
-  const unsafeCancel = await fetch(`${base}/internal/a2a/action`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...internalHeaders },
-    body: JSON.stringify({
-      conversationJobId: publishTask,
-      buyerAgentId: "buyer-42",
-      action: "cancel-hire",
-      args: {},
-    }),
-  });
-  assert.equal(unsafeCancel.status, 400);
-  assert.match((await unsafeCancel.json()).error, /both signatures already exist/);
+  await assert.rejects(() => call("cancel_hire", { jobId }), /both signatures already exist/);
 
   await rest("POST", "/internal/escrow-event", {
     eventName: "EscrowFunded",
@@ -270,9 +247,9 @@ try {
     submissionId: revision2.submission.submissionId,
     decision: "accept",
   });
-  const deliveryContext = await a2aAction("context");
-  assert.equal(deliveryContext.submissions[0].candidateId, "C1");
-  assert.equal(deliveryContext.submissions[0].freelancerInboxId, undefined);
+  const deliveryContext = await call("get_offers", { jobId });
+  assert.equal(deliveryContext.latestSubmission.submissionId, revision2.submission.submissionId);
+  assert.equal(deliveryContext.latestSubmission.status, "accepted");
   const approval = await call("approve", { jobId, note: "Approved final revision." });
   assert.equal(approval.transaction.to, escrowAddress);
   assert.match(approval.transaction.data, /^0x/);
@@ -296,8 +273,7 @@ try {
   assert.equal(portMessages.length, 6);
   assert.match(portMessages.at(-1).content, /^\[prime-port:escrow-released\]/);
 
-  const disputedPublish = await call("publish", {
-    publishToken: "settlement-e2e-backend-token",
+  const disputedPublish = await rest("POST", "/jobs", {
     title: "Test GenLayer dispute settlement",
     description: "Create a second funded job whose disagreement is resolved through the GenLayer verdict path.",
     deliverables: "A written result that can be evaluated against signed criteria.",
@@ -307,10 +283,8 @@ try {
     deadline: Math.floor(Date.now() / 1000) + 7200,
     agentId: "buyer-42",
     agentWallet: buyer.address,
-    marketplaceJobId: "paid-public-dispute-test",
-  });
+  }, internalHeaders);
   const disputedJobId = disputedPublish.jobId;
-  await rest("POST", `/jobs/${disputedJobId}/publish-task/paid`, { marketplaceJobId: "paid-public-dispute-test" });
   await rest("POST", `/jobs/${disputedJobId}/claims`, {
     payoutAddress: freelancer.address,
     name: "Test Freelancer",
@@ -389,7 +363,7 @@ try {
   assert.equal(disputedJob.status, "settled");
   assert.equal(disputedJob.settlement.status, "resolved");
   assert.equal(disputedJob.settlement.providerBps, 7500);
-  console.log("ok - X Layer escrow lifecycle, revision loop, and direct release");
+  console.log("ok - escrow lifecycle, revision loop, and direct release");
   console.log("ok - dispute evidence, GenLayer verdict, and split settlement lifecycle");
   console.log(`state: ${dataDir}`);
 } finally {

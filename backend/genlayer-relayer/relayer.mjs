@@ -15,6 +15,7 @@ const required = [
   "GENLAYER_RPC_URL",
   "GENLAYER_RELAYER_KEY",
   "ESCROW_ADDRESS",
+  "ESCROW_RPC_URL",
   "RELAYER_TOKEN",
 ];
 const missing = required.filter((name) => !env[name]);
@@ -24,12 +25,12 @@ if (missing.length) {
 }
 
 const backend = env.BACKEND_URL ?? "http://127.0.0.1:7860";
-const rpcUrl = env.XLAYER_RPC_URL ?? "https://rpc.xlayer.tech";
+const rpcUrl = env.ESCROW_RPC_URL;
 const pollMs = Number(env.GENLAYER_POLL_MS ?? 15_000);
 const chain = defineChain({
-  id: 196,
-  name: "X Layer",
-  nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
+  id: Number(env.ESCROW_CHAIN_ID ?? 4663),
+  name: env.ESCROW_CHAIN_NAME ?? "Robinhood Chain",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: { default: { http: [rpcUrl] } },
 });
 const evmAccount = privateKeyToAccount(env.GENLAYER_RELAYER_KEY);
@@ -120,7 +121,7 @@ async function relayVerdict(job, verdict) {
     args: [job.pendingHire.hash, verdict.resolutionId, verdict.verdictHash, verdict.providerBps],
   });
   await publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
-  console.log(`[genlayer-relayer] resolved ${job.jobId} on X Layer: ${hash}`);
+  console.log(`[genlayer-relayer] resolved ${job.jobId} on ${chain.name}: ${hash}`);
 }
 
 while (true) {

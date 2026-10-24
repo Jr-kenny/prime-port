@@ -39,6 +39,9 @@ const codecs = [new DevRemoteAttachmentCodec(), new AttachmentCodec()];
 const SVC = "http://localhost:8791";
 const SERVICE_TOKEN = process.env.PORT_SERVICE_TOKEN;
 if (!SERVICE_TOKEN) throw new Error("PORT_SERVICE_TOKEN is required for the port-service E2E");
+const DATA = process.env.PORT_DATA_DIR
+  ? `${process.env.PORT_DATA_DIR.replace(/\/$/, "")}/`
+  : new URL("./data/", import.meta.url).pathname;
 const jobId = `e2e-${Date.now()}`;
 const api = async (method, path, body, headers = {}) => {
   const r = await fetch(`${SVC}${path}`, {
@@ -106,7 +109,11 @@ ok("freelancer sees agent's reply as the port", !!reply);
 // through the same DM the negotiation rode.
 const deliverable = { filename: "final-cut-15s.mp4", mimeType: "video/mp4", data: new TextEncoder().encode("pretend this is 15 seconds of vertical video") };
 const encrypted = await RemoteAttachmentCodec.encodeEncrypted(deliverable, new AttachmentCodec());
-const uploadRes = await fetch(`${SVC}/ports/${jobId}/attachments`, { method: "POST", body: encrypted.payload });
+const uploadRes = await fetch(`${SVC}/ports/${jobId}/attachments`, {
+  method: "POST",
+  headers: { authorization: `Bearer ${SERVICE_TOKEN}` },
+  body: encrypted.payload,
+});
 const uploaded = await uploadRes.json();
 ok("upload stores ciphertext under its own digest", uploadRes.ok && uploaded.contentDigest === encrypted.digest && uploaded.url.endsWith(encrypted.digest));
 const remoteAttachment = {
@@ -167,7 +174,7 @@ const status = await api("GET", `/ports/${jobId}`);
 ok("status is scrapped and grant token withheld", status.status === "scrapped" && !status.grantToken);
 
 // archive integrity: hash reproduces from entries, and entries match plaintext
-const archivePath = new URL(`./data/archive/${jobId}.json`, import.meta.url).pathname;
+const archivePath = `${DATA}archive/${jobId}.json`;
 const arch = JSON.parse(readFileSync(archivePath, "utf8"));
 const convo = arch.conversations[0];
 ok("archive hash reproduces from its own entries", transcriptHash(convo.entries) === convo.transcriptHash);
@@ -182,7 +189,7 @@ ok("plaintext re-hashes to the committed entry hashes", rehash);
 // digest the transcript committed to, and the envelope re-hashes to its entry
 const attRow2 = convo.plaintext.find((p) => p.attachment);
 ok("archive carries the attachment envelope", !!attRow2 && attRow2.attachment.contentDigest === encrypted.digest);
-const payloadPath = new URL(`./data/archive/${attRow2.attachment.payload}`, import.meta.url).pathname;
+const payloadPath = `${DATA}archive/${attRow2.attachment.payload}`;
 const payloadBytes = readFileSync(payloadPath);
 ok(
   "archived payload re-hashes to the committed contentDigest",
@@ -205,7 +212,11 @@ ok(
 );
 
 // a scrapped port takes no more evidence
-const lateUpload = await fetch(`${SVC}/ports/${jobId}/attachments`, { method: "POST", body: encrypted.payload });
+const lateUpload = await fetch(`${SVC}/ports/${jobId}/attachments`, {
+  method: "POST",
+  headers: { authorization: `Bearer ${SERVICE_TOKEN}` },
+  body: encrypted.payload,
+});
 ok("upload to a scrapped port is refused", lateUpload.status === 400);
 
 console.log(process.exitCode ? "E2E FAILED" : "E2E PASSED");

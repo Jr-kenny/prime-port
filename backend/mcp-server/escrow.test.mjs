@@ -14,6 +14,7 @@ const config = escrowConfig({
   ESCROW_ADDRESS: "0x1111111111111111111111111111111111111111",
   USDT_ADDRESS: "0x779ded0c9e1022225f8e0630b35a9b54be713736",
   ESCROW_CHAIN_ID: "196",
+  ESCROW_RPC_URL: "http://127.0.0.1:1",
 });
 const pendingHire = {
   hash: `0x${"ab".repeat(32)}`,
