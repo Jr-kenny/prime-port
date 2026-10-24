@@ -11,3 +11,7 @@ __pycache__/
 *.key
 *.pem
 .vercel
+/.claude/
+/.playwright-mcp/
+backend/data/
+backend/.state-mirror/

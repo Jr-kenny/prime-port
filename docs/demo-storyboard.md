@@ -8,7 +8,7 @@ without a voiceover, because it is just two parties talking and a deal happening
 write-up on the submission page is the explainer; the video only has to show the thing
 existing.
 
-OKX caps the video at 90 seconds, so the take gets trimmed in the edit (speed up the
+The submission caps the video at 90 seconds, so the take gets trimmed in the edit (speed up the
 waiting, cut the dead air, never stage a screen). The negotiation is the heart: keep the
 exchange where the human pushes the price UP and wins.
 
@@ -28,8 +28,8 @@ Two seats, one screen recording each (or side by side):
 The port side on camera is entirely real: real MCP tools, real XMTP channel, and
 real signatures over the escrow authorization. A rehearsal may inject decoded
 events, but the submission take should show the real wallet approval/funding
-and X Layer lock receipt using the smallest practical USD₮0 amount. Never label
-a simulated event as an on-chain payment.
+and the Robinhood Chain Testnet lock receipt using the smallest practical tUSD
+amount. Never label a simulated event as an on-chain payment.
 
 ## The beats and the driver commands
 
@@ -49,12 +49,12 @@ node demo-agent.mjs hire <jobId> <inbox> 10        # commitment + agent signatur
 # Kenny countersigns in the web app (one click)
 
 # buyer signs and broadcasts the exact approval + funding requests
-# the X Layer watcher posts the centered escrow-locked notice
+# the escrow watcher posts the centered escrow-locked notice
 # Kenny delivers the photo through the chat
 
 node demo-agent.mjs offers <jobId>                 # agent reviews the evidence
 node demo-agent.mjs approve <jobId> "Got the shot, exactly the frame I wanted. Approving now, payout's on its way."
-# buyer broadcasts release; the X Layer event posts the released notice and
+# buyer broadcasts release; the escrow event posts the released notice and
 # the port archives.
 ```
 
@@ -65,6 +65,8 @@ demo wallet in `data/demo-agent-key` so the hire signature verifies across comma
 
 - [ ] Kenny's site login exists already (first-time wallet provisioning is slow TV).
 - [ ] Telegram notifications on, channel joined: the buzz opens the video.
+- [ ] Start the local backend with `ESCROW_TEST_EVENTS=1` if the rehearsal injects
+      the escrow event instead of broadcasting a real funding transaction.
 - [ ] One dry run of the whole conversation off camera. Keep that recording as backup.
 - [ ] Agree the price dance beforehand: open 8, ask 11, settle 10. Improvise the words,
       not the numbers.

@@ -2,6 +2,14 @@
 ### OKX.AI Genesis Hackathon | Deadline: July 17, 2026 | Team of 4
 ### (supersedes "agnet -freelancer-idea", architecture changed after verifying the OKX AI Task Marketplace)
 
+> **Status note (Oct 2026).** This brief records the OKX-era design. The
+> marketplace listing was delisted, so the buyer side no longer runs through OKX
+> A2A: an agent connects with a wallet over HTTP/MCP, pays the publication fee in
+> native ETH, and reads a per-job inbox. The trust model, escrow, and GenLayer
+> dispute path described below are unchanged. Current entry points:
+> [README.md](../README.md), [testnet-robinhood.md](testnet-robinhood.md), and
+> [primeportlive.vercel.app/agents](https://primeportlive.vercel.app/agents).
+
 ---
 
 ## THE ONE-LINER

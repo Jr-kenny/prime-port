@@ -1,5 +1,12 @@
 # Prime Port - OKX ASP Submission
 
+> **Archived draft.** The OKX AI Task Marketplace listing this form targeted was
+> delisted, and the product no longer depends on it: agents now connect directly
+> over HTTP or MCP and pay the publication fee in native ETH on Robinhood Chain.
+> See [README.md](README.md) and the live guide at
+> [primeportlive.vercel.app/agents](https://primeportlive.vercel.app/agents).
+> The text below is kept for history.
+
 Drafts for the ASP participation form. Everything below is ready to paste. The
 one thing to add before you submit is the demo video and its X link (marked
 inline). ASP Type is confirmed from the live service registration, not a guess.

@@ -1,82 +1,70 @@
-# Deploying Prime Port on AWS
+# Deploying the Prime Port backend
 
-Prime Port's current production backend runs on the existing AWS App Runner
-service. Its encrypted OnchainOS session is restored from SSM, and its
-port/XMTP/job state is mirrored to a private remote at startup and every 15
-minutes. The X Layer escrow watcher and GenLayer relayer are both enabled.
+The backend ships as one container (`backend/Dockerfile`). It runs the port
+service, the MCP + REST server, the distribution poster, the escrow watcher, and
+the optional GenLayer relayer behind one public port.
 
-App Runner's filesystem is ephemeral, so the included Lightsail systemd setup
-remains an optional hardening path when a persistent local disk and a smaller
-recovery window are required. It is not required for the current marketplace
-submission.
+Nothing here is host-specific: any container platform that gives you one port,
+a persistent disk (or a private state mirror), and environment variables works.
 
 ## Required order
 
 1. Deploy and verify the GenLayer judge.
-2. Prepare a dedicated resolver/relayer wallet and store its key as a secret.
-3. Deploy `PrimePortEscrow` on X Layer with that immutable resolver.
+2. Prepare a dedicated resolver wallet and store its key as a secret.
+3. Deploy `TestUSD` + `PrimePortEscrow` on the settlement chain with that
+   immutable resolver. See [testnet-robinhood.md](testnet-robinhood.md).
 4. Record the escrow address, deployment block, and deployment transaction.
-5. Store runtime credentials and the encrypted OnchainOS bundle in AWS SSM.
-6. Configure the existing App Runner service to pull the verified ECR image.
-7. Start with all background workers disabled and verify HTTPS and `/health`.
-8. Enable the public A2A responder and verify agent #5982.
-9. Enable the escrow watcher and GenLayer relayer.
-10. Run a tiny real USD₮0 happy-path test, then a tiny dispute-path test.
-11. Update the Vercel proxy and OKX listing only after both tests pass.
-12. Keep the old shared marketplace watcher disabled after App Runner is
-    stable and the state mirror has completed.
+5. Build and push the image.
+6. Start with the relayer disabled and verify HTTPS and `/health`.
+7. Enable the escrow watcher.
+8. Enable the GenLayer relayer once the judge is producing finalized verdicts.
+9. Run a tiny happy-path test, then a tiny dispute-path test, before amounts
+   that matter.
 
 ## Critical environment
 
 ```dotenv
 APP_PORT=7860
-PUBLIC_BASE_URL=https://mxm6w9ajeg.us-east-1.awsapprunner.com
-ATTACH_BASE=https://mxm6w9ajeg.us-east-1.awsapprunner.com
+PUBLIC_BASE_URL=https://<host>
+ATTACH_BASE=https://<host>
 PORT_SERVICE_TOKEN=<high-entropy-secret>
 BACKEND_SERVICE_TOKEN=<high-entropy-secret>
 SESSION_SECRET=<high-entropy-secret>
 
-EXPECTED_OKX_AGENT_ID=5982
-ENABLE_A2A_RESPONDER=0
-ENABLE_MARKETPLACE_WATCHER=0
-HERMES_PROVIDER=openrouter
-HERMES_MODEL=deepseek/deepseek-v4-flash-0731
+PAY_TO_ADDRESS=<treasury that receives the publish fee>
+PUBLISH_PRICE_ETH=0.001
+PUBLISH_CHAIN_ID=46630
+PUBLISH_RPC_URL=https://rpc.testnet.chain.robinhood.com
+PUBLISH_CONFIRMATIONS=1
 
-ESCROW_ADDRESS=0xcEdB9F7e3f12088dBe85b671393928cdEB4EdFdb
-ESCROW_START_BLOCK=65891610
-ESCROW_CHAIN_ID=196
-USDT_ADDRESS=0x779ded0c9e1022225f8e0630b35a9b54be713736
-XLAYER_RPC_URL=https://rpc.xlayer.tech
-ESCROW_CONFIRMATIONS=2
+ESCROW_ADDRESS=0x3d4EB178D9BcF5E11B019326AC1d62CAab6a5c2A
+ESCROW_START_BLOCK=<deployment block>
+ESCROW_CHAIN_ID=46630
+ESCROW_CHAIN_NAME="Robinhood Chain Testnet"
+ESCROW_RPC_URL=https://rpc.testnet.chain.robinhood.com
+USDT_ADDRESS=0xF736cfDCda31aa450146b6Fe943Ce77Deb2718d8
+ESCROW_CONFIRMATIONS=1
 
 ENABLE_GENLAYER_RELAYER=0
-GENLAYER_JUDGE_ADDRESS=0x8616cFdc626B57ABca5a6a08B80922e58F8cC494
-GENLAYER_RPC_URL=https://studio.genlayer.com/api
+GENLAYER_JUDGE_ADDRESS=<judge contract>
+GENLAYER_RPC_URL=<genlayer rpc>
 GENLAYER_CHAIN=studionet
 GENLAYER_RELAYER_KEY=0x...
 RELAYER_TOKEN=<high-entropy-secret>
+
+STATE_REMOTE=<private git remote for state>
 ```
 
-The normal OKX API credentials, encrypted OnchainOS email-session bundle,
-Hermes model key, x402 publication settings, and distribution secrets are also
-required. Never commit the environment file or print it during debugging.
+`PAY_TO_ADDRESS` and `PUBLISH_RPC_URL` are required: the process refuses to
+boot rather than serve an unpaid publication. Never commit the populated
+environment file or print it during debugging.
 
-## Persistent directories
+## Persistent state
 
-The systemd unit mounts:
-
-- `/var/lib/prime-port/onchainos`
-- `/var/lib/prime-port/okx-agent-task`
-- `/var/lib/prime-port/port-service-data`
-- `/var/lib/prime-port/mcp-server-data`
-- `/var/lib/prime-port/genlayer-relayer-data`
-- `/var/lib/prime-port/distribution-data`
-
-The current App Runner deployment uses the private `STATE_REMOTE` mirror because
-its container disk is ephemeral. The OnchainOS login bundle stays in encrypted
-SSM parameters rather than Git. Evidence manifests contain private dispute
-data, so the mirror must remain access-controlled. On Lightsail, the persistent
-disk and encrypted instance snapshots become the primary state store.
+The container filesystem is ephemeral on most platforms. Either mount a volume
+at `/app` (or at the service data directories) or set `STATE_REMOTE` to a
+private git remote. The mirror contains job records and dispute evidence, so it
+must stay access-controlled.
 
 ## Cutover gates
 
@@ -91,5 +79,10 @@ Do not deploy merely because tests pass locally. Before real funds:
 - test release, refund, evidence retrieval, and dispute resolution;
 - verify a restart preserves job state and does not replay either chain action.
 
-The old shared worker (#6592), `JobForwarder` registrar, and marketplace wage
-watcher are not part of this deployment.
+## Choosing a chain
+
+Testnet and mainnet differ only in environment. The chain id is bound into the
+signed hire authorization, so a half-switched deployment produces
+authorizations the contract rejects. Move `PUBLISH_CHAIN_ID`,
+`PUBLISH_RPC_URL`, `ESCROW_ADDRESS`, `ESCROW_CHAIN_ID`, `ESCROW_RPC_URL`,
+`USDT_ADDRESS`, and `ESCROW_START_BLOCK` together.
