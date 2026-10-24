@@ -5,8 +5,8 @@ import {Script, console} from "forge-std/Script.sol";
 import {PrimePortEscrow} from "../src/PrimePortEscrow.sol";
 
 /// Env:
-///   USDT_ADDRESS     USD₮0 on X Layer
-///   RESOLVER_ADDRESS trusted GenLayer bridge receiver on X Layer
+///   USDT_ADDRESS     settlement token (USDC/USDG, or TestUSD on a testnet)
+///   RESOLVER_ADDRESS trusted GenLayer bridge receiver; immutable
 contract DeployEscrow is Script {
     function run() external {
         address usdt = vm.envAddress("USDT_ADDRESS");

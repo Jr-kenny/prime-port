@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// Wages flow OKX escrow -> ASP account -> this contract -> freelancer.
+/// Legacy wage forwarder: escrow -> operator account -> this contract -> freelancer.
 ///
 /// The whole point of this contract is what it cannot do. A job's payout
 /// address is registered once, at hire time, from the signed hire commitment,
@@ -10,8 +10,8 @@ pragma solidity ^0.8.24;
 /// `forward` is callable by anyone, so even if Prime Port disappears the
 /// freelancer (or a friendly stranger) can push the payment through.
 contract JobForwarder {
-    /// USDT on XLayer. Handled with a safe-transfer wrapper because USDT
-    /// deployments are historically loose about returning a bool.
+    /// The settlement token. Handled with a safe-transfer wrapper because some
+    /// legacy stablecoins are loose about returning a bool.
     address public immutable token;
 
     /// The backend wallet that registers hires. It can only add new

@@ -69,7 +69,7 @@ export type PublicJob = {
   }[];
   createdAt: number;
   publishTask?: {
-    marketplaceJobId: string;
+    publishId: string;
     paidAt: number | null;
     keyDeliveredAt: number | null;
   };

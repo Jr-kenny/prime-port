@@ -2,61 +2,51 @@
 
 **AI agents hire real humans for the jobs agents can't do, and for once the agent gets a voice instead of a post button.**
 
-An agent pays through OKX's AI Task Marketplace and stays in its existing conversation with Prime Port Connect. Prime Port opens the human job, keeps every freelancer in a separate private channel, and presents them to the buyer as stable candidates such as C1 and C2. The buyer can compare, negotiate, shortlist, hire, review, and settle without installing XMTP or building another endpoint. Prime Port never takes custody of a wage outside its escrow rules, and disputed work is judged by GenLayer rather than by our application server.
+An agent connects with a wallet over plain HTTP or MCP, pays a 0.001 ETH publication fee on Robinhood Chain, and gets a private job inbox. Prime Port opens the human job, keeps every freelancer in a separate lane, and presents them to the buyer as stable candidates such as C1 and C2. The buyer can compare, negotiate, hire, review, and settle without installing XMTP, holding an account, or building another endpoint. Prime Port never takes custody of a wage outside its escrow rules, and disputed work is judged by GenLayer rather than by our application server.
 
 ## Why this exists
 
 Everyone building "agents that hire humans" hands the agent a form: post a task, wait, accept or reject. No voice, no negotiation, no back-and-forth. The agent is a vending machine customer, not a client.
 
-Prime Port gives the agent a seat at the table. The same conversation a human client would have (what exactly do you need, what's it worth, who's the right person) happens inside the OKX chat it already knows how to use. Behind that one buyer-facing conversation, every freelancer has a private XMTP lane. OKX built agent-to-agent commerce, and this opens their agents onto the entire human workforce.
+Prime Port gives the agent a seat at the table. The same conversation a human client would have (what exactly do you need, what's it worth, who's the right person) happens over an HTTP inbox the agent can poll in ten lines of code. Behind that one buyer-facing conversation, every freelancer has a private XMTP lane on our side. The agent never has to know what XMTP is.
 
 In plain terms: other platforms give a robot a "post job" button and that's it. We give the robot the phone line, so it can actually talk the job through and strike the deal itself.
 
 ## How it works
 
-Two marketplaces, one thing bridging them:
-
 ```
- OKX AI MARKETPLACE (theirs)          PRIME PORT (ours)
- agent-facing storefront              human-facing marketplace
- ─────────────────────────           ─────────────────────────
- agent finds Prime Port (ASP)   ──►   job page on our site
- x402 publication payment             claim flow (email login,
-                                      embedded wallet, no crypto UX)
-                    \                /
-                     \              /
-                      ══ THE PORT ══
-          one ready-made OKX buyer conversation
-          stable candidate aliases C1, C2, and so on
-          separate private XMTP channel per freelancer
-          deterministic routing, then signed settlement
+        AGENT                              PRIME PORT                        HUMAN
+  ─────────────────                ─────────────────────             ─────────────────
+  any MCP client            ──►     job page on our site       ──►    claim flow (email login,
+  or 10 lines of curl               HTTP inbox per job                 embedded wallet, no crypto UX)
+  wallet = identity                 stable aliases C1, C2              private XMTP lane per person
+  0.001 ETH publish fee             verbatim relay, cursor
+                                    dual-signed escrow
 ```
 
-- **The OKX side** is the storefront. Prime Port registers one public x402 service on the OKX AI Task Marketplace: publish a human job and open its port.
+- **The agent side** is a public endpoint. One JSON POST publishes the job; a second POST pays for it. No SDK, no signup, no marketplace listing, no inbound port.
 - **The human side** is ours: the job board, the claim flow, embedded wallets so freelancers never touch crypto plumbing, and the chat.
-- **The port** is the product. Buyers use it through their existing OKX conversation. Direct MCP and XMTP controls remain advanced compatibility paths. The negotiated wage is handled internally by a small X Layer escrow, with GenLayer called only if either party opens a dispute.
+- **The port** is the product. The negotiated wage is handled by a small escrow on Robinhood Chain, with GenLayer called only if either party opens a dispute.
 
 ### The lifecycle
 
-1. **Publish.** The agent pays the public `Publish a human job` x402 endpoint. That pays for the listing and mints the port, independent of whether any hire ever happens.
-2. **The port opens.** Prime Port Connect opens or reuses the buyer's OKX A2A conversation automatically. The buyer receives a ready message instead of an inbox identifier or SDK instructions.
-3. **Claim.** Freelancers find the job on the site, sign in with email or Google, get an embedded wallet provisioned for them, and each one opens a private XMTP channel with the job port. Nobody sees anyone else's negotiation.
-4. **Negotiate.** Prime Port assigns stable IDs such as C1 and C2, relays each lane into the one buyer conversation, and routes buyer replies only when an exact candidate ID is supplied.
+1. **Publish.** The agent sends 0.001 ETH to the treasury with a single-use 32-byte memo, then replays the job fields with the transaction hash. The memo binds one payment to one publication; a spent memo is rejected.
+2. **The port opens.** The publish response carries the job inbox URL. The agent polls it with a cursor and long-poll, and gets a `C1` the moment a human claims.
+3. **Claim.** Freelancers find the job on the site, sign in with email or Google, get an embedded wallet provisioned for them, and each one opens a private XMTP lane with the job port. Nobody sees anyone else's negotiation.
+4. **Negotiate.** Prime Port relays each lane into the one inbox under a stable alias, and routes buyer replies only when an exact candidate ID is supplied. Message bodies are never rewritten.
 5. **Hire authorization.** The agent commits to one candidate. The terms, payout address, transcript hash, exact escrow deployment, token, amount, deadline, and both wallets are bound into one authorization. Buyer and freelancer sign the same message.
-6. **Fund.** The buyer approves exactly the negotiated USD₮0 amount and funds `PrimePortEscrow` on X Layer. Only the confirmed `EscrowFunded` event changes the job to **escrow locked** and tells the freelancer to start.
+6. **Fund.** The buyer approves exactly the negotiated amount and funds `PrimePortEscrow` on Robinhood Chain. Only the confirmed `EscrowFunded` event changes the job to **escrow locked** and tells the freelancer to start.
 7. **Review and revise.** The freelancer submits through the port (URLs, files, media, tx hashes). The buyer can request changes repeatedly. An accepted revision becomes release-ready; revisions do not touch the contract.
 8. **Settle.** Buyer approval releases directly to the signed payout address. The freelancer can voluntarily cancel and refund the buyer. Either party can freeze the escrow and open a dispute.
-9. **Judge only when needed.** On dispute, Prime Port commits an evidence bundle containing the signed terms, selected transcript, submissions, and revision history. GenLayer judges it and the configured resolver relays the finalized split to X Layer.
+9. **Judge only when needed.** On dispute, Prime Port commits an evidence bundle containing the signed terms, selected transcript, submissions, and revision history. GenLayer judges it and the configured resolver relays the finalized split to the chain.
 10. **Scrap.** After final settlement we archive the signed transcript, revoke the agent's installation, and retire the port identity.
 
-In plain terms: the agent pays a small posting fee up front, then negotiates and hires through a private line. The wage goes into a separate X Layer contract after both parties sign. The application cannot redirect it: release goes to the signed payout wallet, refund goes to the buyer, and a dispute follows a finalized GenLayer result.
+In plain terms: the agent pays a small posting fee up front, then negotiates and hires through a private line. The wage goes into a separate escrow contract after both parties sign. The application cannot redirect it: release goes to the signed payout wallet, refund goes to the buyer, and a dispute follows a finalized GenLayer result.
 
-### Two payment stages, one public service
+### Two payment stages
 
-The wage leg is deliberately not a second storefront service. The public service opens the port; internal orchestration creates the escrow transaction only after a real negotiation and dual-signed hire, exactly as the OKX team recommended for dependent steps.
-
-- **Public x402 purchase:** the flat Prime Port fee, paid before the port can be operated.
-- **Internal wage escrow:** the freelancer's exact negotiated wage, locked in `PrimePortEscrow` and cryptographically bound to that port's signed hire authorization.
+- **Publication fee:** a flat 0.001 ETH, paid before the port can be operated. Native value transfer plus memo, verified against the chain. There is no free path and no silent fallback.
+- **Wage escrow:** the freelancer's exact negotiated wage, locked in `PrimePortEscrow` and cryptographically bound to that port's signed hire authorization.
 
 Sequencing is enforced twice: Prime Port will not create a hire without a paid port, and the escrow contract will not accept funds unless both signatures match the exact buyer, provider, payout, token, amount, deadline, chain, and contract.
 
@@ -64,27 +54,29 @@ Sequencing is enforced twice: Prime Port will not create a hire without a paid p
 
 - **The happy path needs no judge.** Buyer approval releases; voluntary cancellation refunds. GenLayer is a fire escape for actual disagreement or silence.
 - **We can't forge freelancer messages.** Freelancer keys are MPC embedded wallets we can't use without the user's session, and XMTP has no protocol-level message editing. The selected transcript hash and exact terms are committed at hire, then both buyer and freelancer sign the same escrow authorization.
+- **We can't rewrite the agent either.** The inbox relays message bodies byte for byte. The alias is an addressing field on the envelope, never text inside the message.
 - **The app cannot redirect the pay.** The escrow has no owner or mutable payout route. Its immutable resolver can only apply a dispute split after the job is frozen.
 
-In plain terms: we mint the ports and burn them, and we route the rails. The signed authorization, X Layer contract, and GenLayer verdict decide where the wage goes.
+In plain terms: we mint the ports and burn them, and we route the rails. The signed authorization, the escrow contract, and the GenLayer verdict decide where the wage goes.
 
 ## What's live
 
 | Piece | Where | Status |
 |---|---|---|
 | Web app (job board, claim, chat, evidence) | [primeportlive.vercel.app](https://primeportlive.vercel.app) | live |
-| Paid publish endpoint | [AWS App Runner](https://mxm6w9ajeg.us-east-1.awsapprunner.com/mcp/publish) | live on X Layer mainnet x402; submission pending |
-| `PrimePortEscrow` | X Layer mainnet (chain 196), [`0xcEdB9F7e3f12088dBe85b671393928cdEB4EdFdb`](https://www.oklink.com/xlayer/address/0xcEdB9F7e3f12088dBe85b671393928cdEB4EdFdb) | deployed; tiny release and dispute settlements verified live |
-| GenLayer judge + X Layer resolver relay | GenLayer studionet judge `0x8616cFdc626B57ABca5a6a08B80922e58F8cC494`; resolver `0x171DC5af0f64aEbEDbD281F79d2c8034AA7Af4DB` | deployed and relaying finalized verdicts |
-| Legacy `JobForwarder` | X Layer mainnet (chain 196), [`0xe3f11D89e585e2F0009ee5c6f105861525f70712`](https://www.oklink.com/xlayer/address/0xe3f11D89e585e2F0009ee5c6f105861525f70712) | retired from the new hire flow; prior deployment remains immutable |
-| Prime Port Connect (agent #5982) | OKX AI Task Marketplace | owned by the current wallet; submission pending |
+| Agent guide | [primeportlive.vercel.app/agents](https://primeportlive.vercel.app/agents) | live; MCP + HTTP contract |
+| Settlement chain | Robinhood Chain Testnet (46630) | this build |
+| `TestUSD` | [`0xF736cfDCda31aa450146b6Fe943Ce77Deb2718d8`](https://explorer.testnet.chain.robinhood.com/address/0xF736cfDCda31aa450146b6Fe943Ce77Deb2718d8) | deployed; 6 decimals, open mint, testnet only |
+| `PrimePortEscrow` | [`0x3d4EB178D9BcF5E11B019326AC1d62CAab6a5c2A`](https://explorer.testnet.chain.robinhood.com/address/0x3d4EB178D9BcF5E11B019326AC1d62CAab6a5c2A) | deployed; release and dispute paths verified by the settlement E2E |
+| GenLayer judge + resolver relay | studionet judge `0x8616cFdc…8C494`; resolver `0x171DC5af…Af4DB` | deployed and relaying finalized verdicts |
+| Backend | — | not deployed for this testnet build yet |
+| Legacy `JobForwarder` | X Layer mainnet, [`0xe3f11D89…f70712`](https://www.oklink.com/xlayer/address/0xe3f11D89e585e2F0009ee5c6f105861525f70712) | retired from the new hire flow |
 
 The web talks to the AWS backend through its own `/api` path. The port
 lifecycle, dual-signed escrow authorization, revision ledger, contract events,
 direct release, refund, evidence manifest, and GenLayer split-resolution path
-are covered by automated tests. The smallest practical live USD₮0 amounts were
-also used to verify both direct release and dispute settlement before listing
-submission.
+are covered by automated tests. The smallest practical live amounts were also
+used to verify both direct release and dispute settlement.
 
 ## Running it locally
 
@@ -96,12 +88,23 @@ cd backend
 export PORT_SERVICE_TOKEN=$(openssl rand -hex 32)
 export SESSION_SECRET=$(openssl rand -hex 32)
 export BACKEND_SERVICE_TOKEN=$(openssl rand -hex 32)
+
+# the publication fee is real; point it at a treasury you control
+export PAY_TO_ADDRESS=0x...your treasury...
+export PUBLISH_PRICE_ETH=0.001
+export PUBLISH_CHAIN_ID=46630
+export PUBLISH_RPC_URL=https://rpc.testnet.chain.robinhood.com
+
 PORT=8791 node port-service/service.mjs      # the port manager (mint/grant/scrap)
 PORT=8792 node mcp-server/server.mjs         # MCP tools + REST, talks to :8791
 
 # or run the whole thing behind one port the way it deploys:
 node index.mjs                               # proxies both on APP_PORT (default 7860)
 ```
+
+Escrow stays disabled until `ESCROW_ADDRESS` is set. Once it is, `ESCROW_RPC_URL`
+is required as well: there is no inherited node default. The full testnet
+configuration is in [docs/testnet-robinhood.md](docs/testnet-robinhood.md).
 
 ```shell
 # web: from web/
@@ -128,17 +131,18 @@ XMTP defaults to the `dev` network (`XMTP_ENV`). The MCP server finds the port s
 
 The public proxy never forwards port-control routes. Freelancer writes use a
 wallet-signed 12-hour session. Autonomous agents sign one challenge with their
-existing agent wallet and send the returned bearer session on MCP requests.
-Job tools compare that authenticated wallet with the job owner automatically,
-so agents do not manage per-job secrets. Only exact content-addressed
-attachment downloads remain public. When `index.mjs` runs both services, it
-creates internal secrets automatically. Set stable high-entropy values in
-production so sessions survive a backend restart.
+existing agent wallet and send the returned bearer session on MCP and inbox
+requests. Job tools compare that authenticated wallet with the job owner
+automatically, so agents do not manage per-job secrets. Only exact
+content-addressed attachment downloads remain public. When `index.mjs` runs
+both services, it creates internal secrets automatically. Set stable
+high-entropy values in production so sessions survive a backend restart.
 
 An autonomous agent starts a session by posting its wallet to
 `/auth/agent-challenge`, signing the returned message, and posting the challenge
 plus signature to `/auth/agent-session`. It uses the returned token as
-`Authorization: Bearer <token>` for `/mcp` and the paid `/mcp/publish` replay.
+`Authorization: Bearer <token>` for `/mcp`, the publish replay, and the job
+inbox.
 
 ## Repo map
 
@@ -146,12 +150,12 @@ plus signature to `/auth/agent-session`. It uses the returned token as
 backend/
   index.mjs          single-process entry: proxies both services behind one port
   port-service/      mint / grant / operate / scrap, one port per job (XMTP)
-  mcp-server/        the agent-facing MCP tools + REST, plus e2e.mjs and the demo driver
+  mcp-server/        the agent-facing MCP tools + REST, the job inbox, plus e2e tests
   distribution/      job fan-out to X and Telegram with rich preview cards
-  genlayer-relayer/  finalized GenLayer verdict -> X Layer resolution relay
+  genlayer-relayer/  finalized GenLayer verdict -> on-chain resolution relay
 contracts/           PrimePortEscrow (Foundry); legacy JobForwarder retained for history
 genlayer/             dispute judge intelligent contract
-web/                 job board, claim flow, embedded-wallet onboarding, chat
+web/                 job board, claim flow, embedded-wallet onboarding, chat, /agents
 docs/                the brief, the mechanics, and the specs (start with BRIEF.md)
 ```
 
@@ -160,7 +164,8 @@ docs/                the brief, the mechanics, and the specs (start with BRIEF.m
 The design and the confirmed protocol facts live in [`docs/`](docs/):
 
 - [BRIEF.md](docs/BRIEF.md) is the whole thing in one read: architecture, lifecycle, trust model.
-- [port-mechanics.md](docs/port-mechanics.md), [hire-commitment.md](docs/hire-commitment.md), and [marketplace-watcher.md](docs/marketplace-watcher.md) go deep on the parts that carry the most weight.
+- [port-mechanics.md](docs/port-mechanics.md) and [hire-commitment.md](docs/hire-commitment.md) go deep on the parts that carry the most weight.
+- [testnet-robinhood.md](docs/testnet-robinhood.md) is the deploy-and-publish runbook for Robinhood Chain.
 - [contracts/README.md](contracts/README.md) covers the escrow contract and deployment checklist.
 
 ## Contributing
@@ -169,6 +174,6 @@ Contributions are welcome. The bar and the process are in [CONTRIBUTING.md](CONT
 
 ## The three things worth remembering
 
-1. **The port is the product.** OKX is the storefront, humans are the supply, the port is why either side shows up.
+1. **The port is the product.** Agents are the demand, humans are the supply, the port is why either side shows up.
 2. **The agent gets a voice.** Everywhere else it gets a post button. Here it holds the key card.
 3. **The happy path stays simple.** Sign, fund, revise, approve. GenLayer appears only when the parties cannot agree.

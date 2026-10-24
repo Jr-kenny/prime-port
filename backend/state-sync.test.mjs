@@ -3,37 +3,23 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { STATE_GITATTRIBUTES, pruneGeneratedMirrorState } from "./state-sync.mjs";
+import { STATE_GITATTRIBUTES, pruneRetiredMirrorState } from "./state-sync.mjs";
 
-test("state mirror drops generated A2A caches while preserving durable sessions", (t) => {
+test("state mirror drops retired runtime dirs and keeps live data dirs", (t) => {
   const mirror = `${mkdtempSync(join(tmpdir(), "prime-port-state-sync-"))}/`;
   t.after(() => rmSync(mirror, { recursive: true, force: true }));
-  for (const directory of [
-    "okx-a2a-data/logs",
-    "okx-a2a-data/run",
-    "okx-a2a-data/sqlite",
-    "okx-a2a-data/xmtp",
-  ]) mkdirSync(`${mirror}${directory}`, { recursive: true });
+  mkdirSync(`${mirror}port-service-data/attachments`, { recursive: true });
+  mkdirSync(`${mirror}mcp-server-data`, { recursive: true });
+  mkdirSync(`${mirror}retired-runtime-data/sqlite`, { recursive: true });
+  writeFileSync(`${mirror}port-service-data/attachments/photo.jpg`, "durable");
+  writeFileSync(`${mirror}mcp-server-data/jobs.json`, "{}");
+  writeFileSync(`${mirror}retired-runtime-data/sqlite/session.sqlite`, "stale");
 
-  writeFileSync(`${mirror}okx-a2a-data/logs/llm.log`, "private generated log");
-  writeFileSync(`${mirror}okx-a2a-data/run/daemon.lock`, "123");
-  writeFileSync(`${mirror}okx-a2a-data/config.toml`, "generated=true");
-  writeFileSync(`${mirror}okx-a2a-data/sqlite/session-store.sqlite`, "durable");
-  writeFileSync(`${mirror}okx-a2a-data/sqlite/command-store.sqlite`, "generated");
-  writeFileSync(`${mirror}okx-a2a-data/xmtp/agent-production.db3`, "generated");
-  writeFileSync(`${mirror}okx-a2a-data/xmtp/sensitive-words.json`, "generated");
-  writeFileSync(`${mirror}okx-a2a-data/xmtp/system-config.json`, "generated");
+  pruneRetiredMirrorState(mirror, ["port-service-data", "mcp-server-data"]);
 
-  pruneGeneratedMirrorState(mirror);
-
-  assert.equal(readFileSync(`${mirror}okx-a2a-data/sqlite/session-store.sqlite`, "utf8"), "durable");
-  assert.throws(() => readFileSync(`${mirror}okx-a2a-data/logs/llm.log`));
-  assert.throws(() => readFileSync(`${mirror}okx-a2a-data/run/daemon.lock`));
-  assert.throws(() => readFileSync(`${mirror}okx-a2a-data/config.toml`));
-  assert.throws(() => readFileSync(`${mirror}okx-a2a-data/sqlite/command-store.sqlite`));
-  assert.throws(() => readFileSync(`${mirror}okx-a2a-data/xmtp/agent-production.db3`));
-  assert.throws(() => readFileSync(`${mirror}okx-a2a-data/xmtp/sensitive-words.json`));
-  assert.throws(() => readFileSync(`${mirror}okx-a2a-data/xmtp/system-config.json`));
+  assert.equal(readFileSync(`${mirror}port-service-data/attachments/photo.jpg`, "utf8"), "durable");
+  assert.equal(readFileSync(`${mirror}mcp-server-data/jobs.json`, "utf8"), "{}");
+  assert.throws(() => readFileSync(`${mirror}retired-runtime-data/sqlite/session.sqlite`));
 });
 
 test("state mirror sends every durable database through Git LFS", () => {

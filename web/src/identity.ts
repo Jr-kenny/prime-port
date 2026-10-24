@@ -54,6 +54,28 @@ async function personalSign(wallet: ConnectedWallet, message: string): Promise<s
   })) as string;
 }
 
+// Settlement networks the app can add to a wallet. The escrow transaction
+// carries its own chain id, so a testnet build never points at mainnet.
+const CHAINS: Record<number, {
+  name: string;
+  currency: { name: string; symbol: string; decimals: number };
+  rpc: string;
+  explorer: string;
+}> = {
+  46630: {
+    name: "Robinhood Chain Testnet",
+    currency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpc: "https://rpc.testnet.chain.robinhood.com",
+    explorer: "https://explorer.testnet.chain.robinhood.com",
+  },
+  4663: {
+    name: "Robinhood Chain",
+    currency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpc: "https://rpc.chain.robinhood.com",
+    explorer: "https://robinhoodchain.blockscout.com",
+  },
+};
+
 async function sendWalletTransaction(wallet: ConnectedWallet, transaction: WalletTransaction): Promise<string> {
   const provider = await wallet.getEthereumProvider();
   const chainId = `0x${transaction.chainId.toString(16)}`;
@@ -61,15 +83,16 @@ async function sendWalletTransaction(wallet: ConnectedWallet, transaction: Walle
     await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] });
   } catch (error) {
     const code = (error as { code?: number }).code;
-    if (code !== 4902 || transaction.chainId !== 196) throw error;
+    const chain = CHAINS[transaction.chainId];
+    if (code !== 4902 || !chain) throw error;
     await provider.request({
       method: "wallet_addEthereumChain",
       params: [{
         chainId,
-        chainName: "X Layer",
-        nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
-        rpcUrls: ["https://rpc.xlayer.tech"],
-        blockExplorerUrls: ["https://www.oklink.com/xlayer"],
+        chainName: chain.name,
+        nativeCurrency: chain.currency,
+        rpcUrls: [chain.rpc],
+        blockExplorerUrls: [chain.explorer],
       }],
     });
   }

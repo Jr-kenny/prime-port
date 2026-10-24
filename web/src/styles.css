@@ -37,12 +37,35 @@ button {
   .pp-detail {
     grid-template-columns: 1fr !important;
   }
+
+  .pp-agents {
+    grid-template-columns: 1fr !important;
+    gap: 32px !important;
+    max-width: 780px !important;
+  }
+
+  .pp-agentside {
+    position: static !important;
+  }
 }
 
 @media (max-width: 680px) {
   .pp-grid4,
   .pp-grid3 {
     grid-template-columns: 1fr !important;
+  }
+
+  .pp-agentrules {
+    grid-template-columns: 1fr !important;
+  }
+
+  .pp-agents {
+    padding: 32px 20px 56px !important;
+  }
+
+  .pp-agents-h1 {
+    font-size: 36px !important;
+    line-height: 1.15 !important;
   }
 
   .pp-navlinks {

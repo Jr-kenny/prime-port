@@ -8,6 +8,7 @@ import type { FormEvent } from "react";
 import { useLoginWithEmail, useLoginWithOAuth } from "@privy-io/react-auth";
 import { claimJob, countersignHire, getProfile, listJobs, openDispute, refundBuyer, submitForReview } from "./api";
 import type { FreelancerProfile, PublicJob } from "./api";
+import { AgentsPage } from "./AgentsPage";
 import { ContentTypeRemoteAttachment, decryptAndSave, encryptAndUpload, fmtBytes } from "./attachments";
 import type { RemoteAttachment } from "./attachments";
 import { shortAddr, useIdentity } from "./identity";
@@ -22,6 +23,7 @@ type Route =
   | { name: "job"; jobId: string }
   | { name: "signin"; jobId?: string }
   | { name: "chat"; jobId?: string }
+  | { name: "agents" }
   | { name: "settings" };
 
 function parseRoute(): Route {
@@ -32,6 +34,7 @@ function parseRoute(): Route {
   if (first === "signin") return { name: "signin", jobId: new URLSearchParams(window.location.search).get("job") ?? undefined };
   if (first === "chat" && second) return { name: "chat", jobId: decodeURIComponent(second) };
   if (first === "chat") return { name: "chat" };
+  if (first === "agents") return { name: "agents" };
   if (first === "settings") return { name: "settings" };
   return { name: "landing" };
 }
@@ -118,6 +121,7 @@ export function App() {
       {route.name === "jobs" && <Marketplace {...shared} />}
       {route.name === "job" && <JobDetail {...shared} jobId={route.jobId} />}
       {route.name === "signin" && <SignIn {...shared} jobId={route.jobId} />}
+      {route.name === "agents" && <AgentsPage t={t} s={s} navigate={navigate} />}
       {route.name === "settings" && <Settings {...shared} />}
     </div>
   );
@@ -136,6 +140,11 @@ type Shared = {
   claims: ClaimView[];
 };
 
+// Settlement chain this build points at. Testnet is the default, and the
+// badge is derived from the build variable so a mainnet build cannot show it.
+const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? 46630);
+const IS_TESTNET = CHAIN_ID !== 4663;
+
 function Nav({ t, s, dark, toggleDark, navigate, route, identity }: Shared & { route: Route }) {
   const link = (name: string, target: Route["name"]) => (
     <button style={route.name === target ? s.navLinkActive : s.navLink} onClick={() => navigate(target === "landing" ? "/" : `/${target === "jobs" ? "jobs" : target}`)}>
@@ -150,9 +159,13 @@ function Nav({ t, s, dark, toggleDark, navigate, route, identity }: Shared & { r
       <div style={s.navLinks} className="pp-navlinks">
         {link("Browse jobs", "jobs")}
         {link("Chat", "chat")}
+        {link("For agents", "agents")}
         {link("How it works", "landing")}
       </div>
       <div style={s.navRight}>
+        {IS_TESTNET && (
+          <span style={s.networkBadge} title={`Settlement on chain ${CHAIN_ID}`}>Testnet</span>
+        )}
         <button style={s.themeBtn} onClick={toggleDark} aria-label="Toggle theme">
           <ThemeIcon dark={dark} ink={t.ink} />
         </button>
@@ -259,7 +272,10 @@ function Landing({ t, s, navigate }: Shared) {
         </div>
       </div>
 
-      <div style={s.footer}>Prime Port is part of Prime Isle.</div>
+      <div style={{ ...s.footer, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+        <span>Prime Port is part of Prime Isle.</span>
+        <button style={s.agentsFooterLink} onClick={() => navigate("/agents")}>For agents: connect over HTTP →</button>
+      </div>
     </>
   );
 }
@@ -812,7 +828,7 @@ function ChatScreen(props: Shared & { activeJobId?: string }) {
                   <div style={{ alignSelf: "center", maxWidth: 420, display: "flex", flexDirection: "column", gap: 10, background: t.accentSoft, border: `1px solid ${t.accent}`, borderRadius: 14, padding: "14px 18px", textAlign: "center" }}>
                     <span style={{ font: `700 14px ${BODY}`, color: t.ink }}>The agent signed a hire commitment · {pendingHire.commitment.terms.price} {pendingHire.commitment.terms.currency}</span>
                     <span style={{ font: `400 13px/1.5 ${BODY}`, color: t.muted }}>
-                      Countersign to accept the X Layer escrow and GenLayer dispute policy. The buyer then funds the contract; wait for "Escrow locked" here before starting work. Payment goes to {shortAddr(identity?.payoutAddress ?? "")}.
+                      Countersign to accept the escrow and GenLayer dispute policy. The buyer then funds the contract; wait for "Escrow locked" here before starting work. Payment goes to {shortAddr(identity?.payoutAddress ?? "")}.
                     </span>
                     <button
                       style={{ background: t.accent, color: "#fff", border: "none", borderRadius: 10, padding: "10px 16px", font: `700 14px ${BODY}`, cursor: signing ? "wait" : "pointer" }}

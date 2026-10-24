@@ -388,8 +388,8 @@ const routes = {
   },
   "POST /ports/:jobId/messages": async (body, { jobId }) => {
     const c = await channel(jobId, body.peerInboxId);
-    await c.send(body.content);
-    return { sent: true };
+    const sent = await c.send(body.content);
+    return { sent: true, messageId: typeof sent === "string" ? sent : sent?.id ?? null };
   },
   "GET /ports/:jobId": async (_body, { jobId }) => {
     const rec = registry[jobId];

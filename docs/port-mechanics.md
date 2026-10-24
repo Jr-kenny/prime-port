@@ -1,9 +1,9 @@
 # Port mechanics - spike findings
 
-This document records the optional direct-installation path proved by the original spike. The paid buyer experience now uses the ready-made OKX conversation described in [buyer-conversation.md](buyer-conversation.md). `port_connect` remains available for advanced runtimes, but buyers no longer need it to use Prime Port.
+This document records the optional direct-installation path proved by the original spike. The supported buyer experience is the job inbox over plain HTTP (`GET /jobs/:jobId/inbox`, `POST /jobs/:jobId/messages`), documented at [primeportlive.vercel.app/agents](https://primeportlive.vercel.app/agents). `port_connect` remains available for advanced runtimes that want the raw XMTP inbox, but buyers no longer need it to use Prime Port.
 
 Answers the open item "verify agent-side UX for holding a port installation." Verified against
-the XMTP docs (manage-inboxes) and the onchainos 4.2.1 CLI on 2026-07-11.
+the XMTP docs (manage-inboxes) and the node SDK on 2026-07-11.
 
 ## The one-sentence answer
 
@@ -57,33 +57,30 @@ worse: we'd have held the agent's installation keys, which breaks the "we can't 
 conversations" claim on the agent side. The remote-sign grant keeps that claim true for both
 sides of the port.
 
-## How this meets the OKX side
+## How the agent side connects
 
-- OKX agents already speak XMTP: the marketplace runs its own XMTP system accounts
-  (`onchainos agent system-config` returns them) and agent chat goes through the `okx-a2a`
-  companion tool (`session create`, `xmtp-send`), which the onchainos CLI shells out to.
-- Verified against the published package (`@okxweb3/a2a-node` 0.1.7 on npm): it is a plain
-  `@xmtp/node-sdk` 4.6.0 + `@xmtp/agent-sdk` 0.0.7 stack. The agent's XMTP identity is a local
-  hex private key (`XMTP_WALLET_KEY` or generated via viem) wrapped in a standard signer and
-  passed to `Agent.create` / `Client.create`. Nothing binds the runtime to the marketplace
-  identity, so running a second client against our port inbox is just another `Client.create`.
-- Better still, the XMTP `Signer` the SDK expects is a `signMessage` callback. Our remote-sign
-  grant plugs straight into the SDK version OKX already ships: the agent calls `Client.create`
-  for the port identity with a signer whose `signMessage` hits our port-key endpoint once.
-- Our MCP surface should still offer a guided handshake (`port_connect`) plus a full fallback
-  where `negotiate` and friends operate the port server-side, for agents whose runtimes can't
-  spawn a raw XMTP client.
+An agent does not need XMTP, an SDK, or an inbound port. Its whole surface is
+plain HTTP, documented at `/agents`:
 
-**In plain English:** OKX agents already carry a perfectly normal XMTP messaging app under the
-hood, and nothing in it is welded to their marketplace identity. Logging that app into our port
-as a second account is routine, and the sign-in approval step plugs into the exact software
-version OKX already ships. For agents that can't run their own messaging client at all, our
-tools can drive the port for them as a fallback.
+- `POST /auth/agent-challenge` then `/auth/agent-session` give the paying wallet
+  a short-lived bearer token.
+- `GET /jobs/:jobId/inbox?after=&wait=` long-polls for candidate messages.
+- `GET /jobs/:jobId/threads` lists the candidate lanes with stable aliases.
+- `POST /jobs/:jobId/messages` replies; `candidateId` addresses one lane and
+  `clientId` makes a retried write idempotent.
+
+The same operations exist as MCP tools (`get_offers`, `negotiate`, `hire`,
+`confirm_hire`, and so on) for agents that already speak MCP.
+
+XMTP stays inside the port: the human freelancer's client talks to the port
+inbox, and the bridge relays each body byte for byte in both directions. The
+agent never sees an inbox id, never installs a messaging SDK, and cannot have
+its words rewritten by us.
 
 ## Prototype results (2026-07-11, live XMTP dev network)
 
 Two-process prototype in `backend/spike-port-grant/` using @xmtp/node-sdk 4.6.0 (the exact
-version okx-a2a pins). `port-service.mjs` holds the port wallet and exposes `/sign` + `/revoke`;
+version pinned by the port service). `port-service.mjs` holds the port wallet and exposes `/sign` + `/revoke`;
 `agent.mjs` plays the agent plus a freelancer. The test freelancer uses a locally generated key
 as a stand-in for the real thing: in production the freelancer signs with their own MPC embedded
 wallet (provisioned at claim, we cannot sign for them) or any wallet they bring. To XMTP the two

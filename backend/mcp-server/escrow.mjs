@@ -7,9 +7,12 @@ import {
   toBytes,
 } from "viem";
 
-export const XLAYER_CHAIN_ID = 196;
-export const XLAYER_RPC_URL = "https://rpc.xlayer.tech";
-export const XLAYER_USDT_ADDRESS = "0x779ded0c9e1022225f8e0630b35a9b54be713736";
+// Settlement defaults. Robinhood Chain mainnet, its canonical 6-decimal USDG,
+// and no RPC default: a deployment that enables escrow must name the node it
+// trusts rather than inherit a silent fallback.
+export const SETTLEMENT_CHAIN_ID = 4663;
+export const SETTLEMENT_RPC_URL = "";
+export const SETTLEMENT_USDG_ADDRESS = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
 
 export const AUTHORIZATION_TYPE =
   "PrimePortEscrowAuthorization(bytes32 commitmentHash,address buyer,address provider,address payout,address token,uint256 amount,uint64 deadline,uint256 chainId,address escrow)";
@@ -127,12 +130,13 @@ const erc20Abi = [{
 
 export function escrowConfig(env = process.env) {
   const address = env.ESCROW_ADDRESS?.trim();
-  const token = (env.USDT_ADDRESS ?? XLAYER_USDT_ADDRESS).trim();
-  const chainId = Number(env.ESCROW_CHAIN_ID ?? XLAYER_CHAIN_ID);
-  const rpcUrl = (env.XLAYER_RPC_URL ?? XLAYER_RPC_URL).trim();
+  const token = (env.USDT_ADDRESS ?? SETTLEMENT_USDG_ADDRESS).trim();
+  const chainId = Number(env.ESCROW_CHAIN_ID ?? SETTLEMENT_CHAIN_ID);
+  const rpcUrl = (env.ESCROW_RPC_URL ?? SETTLEMENT_RPC_URL).trim();
   if (address && !isAddress(address)) throw new Error("ESCROW_ADDRESS is not a valid address");
   if (!isAddress(token)) throw new Error("USDT_ADDRESS is not a valid address");
   if (!Number.isSafeInteger(chainId) || chainId <= 0) throw new Error("ESCROW_CHAIN_ID is invalid");
+  if (address && !rpcUrl) throw new Error("ESCROW_RPC_URL must be set when ESCROW_ADDRESS is configured");
   return {
     enabled: Boolean(address),
     address: address?.toLowerCase() ?? null,

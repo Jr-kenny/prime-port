@@ -31,9 +31,7 @@ const DIRS = [
   ["port-service-data", new URL("./port-service/data/", import.meta.url).pathname],
   ["mcp-server-data", new URL("./mcp-server/data/", import.meta.url).pathname],
   ["distribution-data", new URL("./distribution/data/", import.meta.url).pathname],
-  ["marketplace-watcher-data", new URL("./marketplace-watcher/data/", import.meta.url).pathname],
   ["payout-data", new URL("./payout/data/", import.meta.url).pathname],
-  ["okx-a2a-data", process.env.OKX_AGENT_TASK_HOME ?? new URL("./okx-agent-task/", import.meta.url).pathname],
 ];
 
 const enabled = () => Boolean(REMOTE);
@@ -87,25 +85,15 @@ export const STATE_GITATTRIBUTES =
   "**/*.sqlite filter=lfs diff=lfs merge=lfs -text\n" +
   "**/*.sqlite-* filter=lfs diff=lfs merge=lfs -text\n";
 
-// The A2A home contains durable job/session state alongside generated logs,
-// command queues, and raw XMTP installation caches. A fresh installation can
-// rebuild its buyer group from the persisted session metadata plus the live
-// OKX task. Mirroring every account's raw XMTP cache made snapshots too large
-// for the state host. Keep the small session/job records and recreate caches.
-export function pruneGeneratedMirrorState(mirror = MIRROR) {
-  for (const relativePath of [
-    "okx-a2a-data/logs",
-    "okx-a2a-data/run",
-    "okx-a2a-data/tmp",
-    "okx-a2a-data/commands",
-    "okx-a2a-data/xmtp",
-    "okx-a2a-data/config.toml",
-    "okx-a2a-data/sqlite/command-store.sqlite",
-    "okx-a2a-data/sqlite/command-store.sqlite-shm",
-    "okx-a2a-data/sqlite/command-store.sqlite-wal",
-    "okx-a2a-data/sqlite/invalid-xmtp-messages.sqlite",
-  ]) {
-    rmSync(`${mirror}${relativePath}`, { recursive: true, force: true });
+// The mirror is ours. Any top-level entry that is not one of the live data
+// dirs is retired state from an older runtime, so drop it rather than carry it
+// forward under a name nothing writes to anymore.
+export function pruneRetiredMirrorState(mirror = MIRROR, keep = DIRS.map(([name]) => name)) {
+  if (!existsSync(mirror)) return;
+  for (const entry of readdirSync(mirror)) {
+    if (entry === ".git" || entry === ".gitattributes" || entry === ".gitignore") continue;
+    if (keep.includes(entry)) continue;
+    rmSync(`${mirror}${entry}`, { recursive: true, force: true });
   }
 }
 
@@ -115,14 +103,7 @@ async function backupOnce() {
     if (!existsSync(live)) continue;
     cpSync(live, `${MIRROR}${name}`, { recursive: true, force: true });
   }
-  pruneGeneratedMirrorState();
-  // Hermes is installed in the image and its config is recreated at startup;
-  // persisting its runtime cache/logs only introduces generated provider data.
-  rmSync(`${MIRROR}hermes-data`, { recursive: true, force: true });
-  // The encrypted OnchainOS login bundle lives in AWS SSM and is restored by
-  // index.mjs before the Git mirror. Runtime token rotations and diagnostics
-  // are generated state and must not be duplicated into the repository.
-  rmSync(`${MIRROR}onchainos-data`, { recursive: true, force: true });
+  pruneRetiredMirrorState();
   await git(["add", "-A"]);
   const { stdout } = await git(["status", "--porcelain"]);
   if (stdout.trim()) {

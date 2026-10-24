@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {JobForwarder} from "../src/JobForwarder.sol";
 
 /// Standard ERC20-ish mock that returns bool, plus a USDT-style variant
-/// that returns nothing, since XLayer USDT ancestry is Tether.
+/// that returns nothing, since some legacy stablecoins are Tether-derived.
 contract MockToken {
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
