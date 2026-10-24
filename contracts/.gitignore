@@ -1,2 +1,5 @@
 cache/
 out/
+
+# Historical X Layer deployment records (kept locally, not part of this stack)
+broadcast/Deploy.s.sol/

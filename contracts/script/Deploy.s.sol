@@ -4,12 +4,12 @@ pragma solidity ^0.8.24;
 import {Script, console} from "forge-std/Script.sol";
 import {JobForwarder} from "../src/JobForwarder.sol";
 
-/// Deploy to XLayer:
-///   forge script script/Deploy.s.sol --rpc-url https://rpc.xlayer.tech \
+/// Legacy JobForwarder deployment. New hires use PrimePortEscrow.
+///   forge script script/Deploy.s.sol --rpc-url <rpc> \
 ///     --broadcast --private-key $DEPLOYER_KEY
 /// Env:
-///   USDT_ADDRESS   USD₮0 on X Layer
-///   REGISTRAR      backend wallet that registers hires (the ASP wallet)
+///   USDT_ADDRESS   settlement token
+///   REGISTRAR      backend wallet that registers hires
 contract Deploy is Script {
     function run() external {
         address usdt = vm.envAddress("USDT_ADDRESS");
