@@ -76,6 +76,7 @@ export function siteStyles(t: SiteTheme): S {
     navLink: { font: `500 14px ${BODY}`, color: t.muted, cursor: "pointer", background: "none", border: "none", padding: 0, textDecoration: "none" },
     navLinkActive: { font: `500 14px ${BODY}`, color: t.ink, cursor: "pointer", background: "none", border: "none", padding: 0, textDecoration: "none", fontWeight: 700 },
     navRight: { display: "flex", alignItems: "center", gap: 14 },
+    networkBadge: { background: "#FFD23F", color: "#3a2a00", borderRadius: 999, padding: "5px 10px", font: `700 10px ${BODY}`, textTransform: "uppercase" as const, letterSpacing: ".05em" },
     themeBtn: { width: 36, height: 36, borderRadius: "50%", border: `1px solid ${t.border}`, background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" },
     navCta: { background: t.accent, color: "#fff", borderRadius: 10, padding: "10px 18px", font: `600 13.5px ${BODY}`, border: "none", cursor: "pointer", textDecoration: "none" },
 
@@ -215,5 +216,33 @@ export function siteStyles(t: SiteTheme): S {
     setHistoryMain: { display: "flex", flexDirection: "column", gap: 2 },
     setHistoryTitle: { font: `500 13px ${BODY}`, color: t.ink },
     setHistoryDate: { font: `400 11.5px ${BODY}`, color: t.muted },
+
+    // Agent docs. A reading column plus a sticky quick-reference card; the
+    // code surface is fixed near-black in both themes so snippets read the
+    // same at 2am and at noon.
+    agentsWrap: { display: "grid", gridTemplateColumns: "minmax(0,1fr) 304px", gap: 56, padding: "56px 48px 80px", alignItems: "start", maxWidth: 1140, margin: "0 auto" },
+    agentsMain: { display: "flex", flexDirection: "column", gap: 34, maxWidth: 700, minWidth: 0 },
+    agentsSide: { position: "sticky", top: 24, display: "flex", flexDirection: "column", gap: 14 },
+    agentsSideCard: { background: t.cardBg, border: `1px solid ${t.border}`, borderRadius: 16, padding: "20px 22px", display: "flex", flexDirection: "column", gap: 12 },
+    agentsSideLabel: { font: `700 10px ${MONO}`, color: t.muted, textTransform: "uppercase", letterSpacing: ".07em" },
+    agentsSideValue: { font: `600 12px/1.5 ${MONO}`, color: t.ink, wordBreak: "break-all" },
+    agentsSideRow: { display: "flex", flexDirection: "column", gap: 4, paddingTop: 12, borderTop: `1px solid ${t.border}` },
+    agentsStep: { display: "flex", flexDirection: "column", gap: 12 },
+    agentsStepHead: { display: "flex", alignItems: "baseline", gap: 12 },
+    agentsStepNum: { font: `700 11px ${MONO}`, color: t.accent, flex: "none" },
+    agentsStepTitle: { font: `800 20px/1.3 ${DISPLAY}`, color: t.ink, margin: 0, letterSpacing: "-0.012em" },
+    agentsH1: { font: `900 44px/1.08 ${DISPLAY}`, color: t.ink, margin: 0, letterSpacing: "-0.02em" },
+    agentsStepDesc: { font: `400 14px/1.65 ${BODY}`, color: t.muted, margin: 0 },
+    agentsCode: { position: "relative", background: "#131316", border: "1px solid rgba(255,255,255,.09)", borderRadius: 12, padding: "16px 18px", overflowX: "auto" },
+    agentsCodeText: { margin: 0, paddingRight: 44, font: `500 12.5px/1.7 ${MONO}`, color: "#f4f4f2", whiteSpace: "pre" },
+    agentsCopy: { position: "absolute", top: 9, right: 9, background: "rgba(255,255,255,.06)", color: "rgba(244,244,242,.72)", border: "1px solid rgba(255,255,255,.16)", borderRadius: 7, padding: "5px 9px", font: `600 10.5px ${BODY}`, cursor: "pointer" },
+    agentsNote: { font: `400 12.5px/1.6 ${BODY}`, color: t.muted, margin: 0 },
+    agentsNoteCode: { font: `600 12px ${MONO}`, color: t.ink },
+    agentsRuleRow: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
+    agentsRule: { background: t.cardBg, border: `1px solid ${t.border}`, borderRadius: 14, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 6 },
+    agentsRuleTitle: { font: `700 13.5px ${BODY}`, color: t.ink },
+    agentsRuleDesc: { font: `400 12.5px/1.6 ${BODY}`, color: t.muted },
+    agentsBadge: { display: "inline-flex", alignSelf: "flex-start", alignItems: "center", gap: 6, background: "#FFD23F", color: "#3a2a00", borderRadius: 999, padding: "5px 11px", font: `700 10px ${MONO}`, textTransform: "uppercase", letterSpacing: ".05em" },
+    agentsFooterLink: { background: "none", border: "none", padding: 0, font: `600 13px ${BODY}`, color: t.accent, cursor: "pointer", textAlign: "left" },
   };
 }
